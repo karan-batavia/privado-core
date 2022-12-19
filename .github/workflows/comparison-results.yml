@@ -19,7 +19,7 @@ jobs:
           
       - name: Replace artifact names
         # run: echo base_ref_artifact=$(echo ${{github.base_ref}} | sed "s/\//-/g") >> $GITHUB_ENV && echo head_ref_artifact=$(echo ${{github.head_ref}} | sed "s/\//-/g") >> $GITHUB_ENV
-        run: $base_ref_artifact=$(echo ${{github.base_ref}} | sed "s/\//-/g")
+        run: base_ref_artifact=$(echo ${{github.base_ref}} | sed "s/\//-/g")
 
       - name: Check artifact names
         run: echo $base_ref_artifact && echo $head_ref_artifact
