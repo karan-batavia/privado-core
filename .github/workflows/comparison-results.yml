@@ -47,6 +47,9 @@ jobs:
       - name: Build Privado binary for ${{matrix.ref}} branch
         run: cd ${GITHUB_WORKSPACE}/temp/${{matrix.ref}} && ~/bin/sbt -java-home $JAVA_HOME clean && ~/bin/sbt -java-home $JAVA_HOME stage 
 
+      - name: Check
+        run: echo $(echo ${{matrix.ref}} | sed "s/\//-/g")-binary 
+
       - name: Upload privado binary for next job
         uses: actions/upload-artifact@master
         with:
