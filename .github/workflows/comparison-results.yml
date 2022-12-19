@@ -107,8 +107,7 @@ jobs:
           path: ./privado-core-and-rules/${{github.base_ref}}/privado-core-binary
 
       - name: Check if binary is available
-        run: echo ${REF_BINARY} && echo ${env.REF_BINARY}
-
+        run: echo ${REF_BINARY}
       - name: Download head binary 
         uses: actions/download-artifact@master
         with:
