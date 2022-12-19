@@ -19,11 +19,10 @@ jobs:
           
       - name: Replace artifact names
         # run: echo base_ref_artifact=$(echo ${{github.base_ref}} | sed "s/\//-/g") >> $GITHUB_ENV && echo head_ref_artifact=$(echo ${{github.head_ref}} | sed "s/\//-/g") >> $GITHUB_ENV
-        shell: $base_ref_artifact=$(echo ${{github.base_ref}} | sed "s/\//-/g")
-        run: echo $base_ref_artifact
+        run: $base_ref_artifact=$(echo ${{github.base_ref}} | sed "s/\//-/g")
 
       - name: Check artifact names
-        run: echo env.base_ref_artifact && echo env.head_ref_artifact
+        run: echo $base_ref_artifact && echo $head_ref_artifact
 
 
       - name: Install JDK-18
