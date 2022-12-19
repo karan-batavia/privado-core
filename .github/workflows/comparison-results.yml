@@ -50,7 +50,7 @@ jobs:
       - name: Upload privado binary for next job
         uses: actions/upload-artifact@master
         env:
-          REF_BINARY=$(echo ${{matrix.ref}} | sed "s/\//-/g")-binary
+          REF_BINARY: $(echo ${{matrix.ref}} | sed "s/\//-/g")-binary
         with:
           name: ${REF_BINARY}
           path: /home/runner/work/privado-core/privado-core/temp/${{matrix.ref}}/target/universal/stage
@@ -101,7 +101,7 @@ jobs:
       - name: Download base binary 
         uses: actions/download-artifact@master
         env:
-          REF_BINARY=$(echo ${{github.base_ref}} | sed "s/\//-/g")-binary
+          REF_BINARY: $(echo ${{github.base_ref}} | sed "s/\//-/g")-binary
         with:
           name: ${REF_BINARY}
           path: ./privado-core-and-rules/${{github.base_ref}}/privado-core-binary
