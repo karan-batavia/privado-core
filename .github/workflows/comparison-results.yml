@@ -47,13 +47,12 @@ jobs:
       - name: Build Privado binary for ${{matrix.ref}} branch
         run: cd ${GITHUB_WORKSPACE}/temp/${{matrix.ref}} && ~/bin/sbt -java-home $JAVA_HOME clean && ~/bin/sbt -java-home $JAVA_HOME stage 
 
-      - name: Check
-        run: ref_binary=$(echo ${{matrix.ref}} | sed "s/\//-/g")-binary 
-
       - name: Upload privado binary for next job
         uses: actions/upload-artifact@master
+        env:
+          REF_BINARY=$(echo ${{matrix.ref}} | sed "s/\//-/g")-binary
         with:
-          name: $ref_binary
+          name: ${REF_BINARY}
           path: /home/runner/work/privado-core/privado-core/temp/${{matrix.ref}}/target/universal/stage
 
   scan_repositories:
@@ -73,9 +72,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-
-      - name: Check artifact names
-        run: echo $base_ref_artifact && echo $head_ref_artifact
 
       - name: Install JDK-18
         uses: actions/setup-java@v3
@@ -104,9 +100,14 @@ jobs:
 
       - name: Download base binary 
         uses: actions/download-artifact@master
+        env:
+          REF_BINARY=$(echo ${{github.base_ref}} | sed "s/\//-/g")-binary
         with:
-          name: $(echo ${{github.base_ref}} | sed "s/\//-/g")-binary
+          name: ${REF_BINARY}
           path: ./privado-core-and-rules/${{github.base_ref}}/privado-core-binary
+
+      - name: Check if binary is available
+        run: echo ${REF_BINARY} && echo ${env.REF_BINARY}
 
       - name: Download head binary 
         uses: actions/download-artifact@master
