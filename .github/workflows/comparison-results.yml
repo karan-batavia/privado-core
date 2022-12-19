@@ -5,6 +5,9 @@ on:
   pull_request:
     branches:
       - "**"
+env:
+  BASE_REF_ARTIFACT: $(echo ${{github.base_ref}} | sed "s/\//-/g")
+  HEAD_REF_ARTIFACT: $(echo ${{github.head_ref}} | sed "s/\//-/g")
 
 jobs:
   build_privado:
@@ -17,12 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@v3
           
-      - name: Replace artifact names
-        # run: echo base_ref_artifact=$(echo ${{github.base_ref}} | sed "s/\//-/g") >> $GITHUB_ENV && echo head_ref_artifact=$(echo ${{github.head_ref}} | sed "s/\//-/g") >> $GITHUB_ENV
-        run: base_ref_artifact=$(echo ${{github.base_ref}} | sed "s/\//-/g")
-
       - name: Check artifact names
-        run: echo $base_ref_artifact && echo $head_ref_artifact
+        run: echo ${BASE_REF_ARTIFACT} && echo ${HEAD_REF_ARTIFACT}
 
 
       - name: Install JDK-18
