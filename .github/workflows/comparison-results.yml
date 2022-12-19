@@ -48,12 +48,12 @@ jobs:
         run: cd ${GITHUB_WORKSPACE}/temp/${{matrix.ref}} && ~/bin/sbt -java-home $JAVA_HOME clean && ~/bin/sbt -java-home $JAVA_HOME stage 
 
       - name: Check
-        run: echo $(echo ${{matrix.ref}} | sed "s/\//-/g")-binary 
+        run: ref_binary=$(echo ${{matrix.ref}} | sed "s/\//-/g")-binary 
 
       - name: Upload privado binary for next job
         uses: actions/upload-artifact@master
         with:
-          name: $(echo ${{matrix.ref}} | sed "s/\//-/g")-binary
+          name: $ref_binary
           path: /home/runner/work/privado-core/privado-core/temp/${{matrix.ref}}/target/universal/stage
 
   scan_repositories:
