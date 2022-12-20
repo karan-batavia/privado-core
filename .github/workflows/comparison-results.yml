@@ -159,6 +159,9 @@ jobs:
       - name: Store ${{matrix.repo_name}}.json (${{github.head_ref}})
         run: cat ${GITHUB_WORKSPACE}/repos/${{matrix.repo_name}}/.privado/privado.json > ${GITHUB_WORKSPACE}/${{matrix.repo_name}}_results/${{ env.HEAD_NAME }}/privado.json
 
+      - name: Check if time files are present
+        run: ls ${GITHUB_WORKSPACE}/time_results/
+
       - name: Pass JSON (${{github.base_ref}}) to the next job
         uses: actions/upload-artifact@master
         with:
@@ -176,6 +179,8 @@ jobs:
         with:
           name: ${{matrix.repo_name}}_cpu
           path: /home/runner/work/privado-core/privado-core/tools/results_1.txt
+
+
 
       - name: Upload time stats for repos
         uses: actions/upload-artifact@master
@@ -228,6 +233,9 @@ jobs:
         with: 
           name: ${{matrix.repo_name}}_time
           path: ./${{matrix.repo_name}}
+
+      - name: Check if time results are present
+        run: ls ./{{matrix.repo_name}}
 
       - name: Download ${{github.head_ref}} CPU and Memory Result (${{matrix.repo_name}})
         uses: actions/download-artifact@master
