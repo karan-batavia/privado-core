@@ -49,7 +49,7 @@ jobs:
         env:
           UPLOAD_NAME: $(echo ${{ matrix.ref }} | base64) 
         with:
-          name: env.UPLOAD_NAME
+          name: ${{ env.UPLOAD_NAME }}
           path: /home/runner/work/privado-core/privado-core/temp/${{matrix.ref}}/target/universal/stage
 
   scan_repositories:
