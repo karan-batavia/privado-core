@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v3
           
       - name: Check artifact names
-        run: cat ${{ github.base_ref }} | base64 
+        run: echo ${{ github.base_ref }} | base64 
 
       - name: Install JDK-18
         uses: actions/setup-java@v3
@@ -47,7 +47,7 @@ jobs:
       - name: Upload privado binary for next job
         uses: actions/upload-artifact@master
         with:
-          name: ${REF_BINARY}
+          name: ${{ echo ${{ matrix.ref }} | base64 }}
           path: /home/runner/work/privado-core/privado-core/temp/${{matrix.ref}}/target/universal/stage
 
   scan_repositories:
