@@ -234,9 +234,6 @@ jobs:
           name: ${{matrix.repo_name}}_time
           path: ./${{matrix.repo_name}}
 
-      - name: Check if time results are present
-        run: ls ./{{matrix.repo_name}}
-
       - name: Download ${{github.head_ref}} CPU and Memory Result (${{matrix.repo_name}})
         uses: actions/download-artifact@master
         with: 
