@@ -47,7 +47,7 @@ jobs:
       - name: Upload privado binary for next job
         uses: actions/upload-artifact@master
         with:
-          name: ${{ echo ${{ matrix.ref }} | base64 }}
+          name: $(echo ${{ matrix.ref }} | base64)
           path: /home/runner/work/privado-core/privado-core/temp/${{matrix.ref}}/target/universal/stage
 
   scan_repositories:
