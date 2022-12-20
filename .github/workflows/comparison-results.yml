@@ -44,10 +44,14 @@ jobs:
       - name: Build Privado binary for ${{matrix.ref}} branch
         run: cd ${GITHUB_WORKSPACE}/temp/${{matrix.ref}} && ~/bin/sbt -java-home $JAVA_HOME clean && ~/bin/sbt -java-home $JAVA_HOME stage 
 
+      - name: Set env
+        run: echo "UPLOAD_NAME=$(echo ${{ matrix.ref }} | base64)" >> $GITHUB_ENV
+
+      - name: Check env
+        run: echo ${{ env.UPLOAD_NAME }}
+
       - name: Upload privado binary for next job
         uses: actions/upload-artifact@master
-        env:
-          UPLOAD_NAME: $(echo ${{ matrix.ref }} | base64) 
         with:
           name: ${{ env.UPLOAD_NAME }}
           path: /home/runner/work/privado-core/privado-core/temp/${{matrix.ref}}/target/universal/stage
