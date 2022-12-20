@@ -148,7 +148,7 @@ jobs:
         run: chmod 777 ${GITHUB_WORKSPACE}/privado-core-and-rules/${{ env.HEAD_NAME }}/privado-core-binary/bin/privado-core
 
       - name: Scan ${{matrix.owner}}/${{matrix.repo_name}} (${{github.base_ref}}) using privado scan
-        run: cd ${GITHUB_WORKSPACE}/privado-core-and-rules/${{ env.BASE_NAME }}/privado-core-binary/bin && { time ./privado-core scan ${GITHUB_WORKSPACE}/repos/${{matrix.repo_name}} -ic ${GITHUB_WORKSPACE}/privado-core-and-rules/privado --skip-upload; } 2> ${GITHUB_WORKSPACE}/time_results/${{matrix.repo_name}}_time_${{ env.HEAD_NAME }}.txt
+        run: cd ${GITHUB_WORKSPACE}/privado-core-and-rules/${{ env.BASE_NAME }}/privado-core-binary/bin && { time ./privado-core scan ${GITHUB_WORKSPACE}/repos/${{matrix.repo_name}} -ic ${GITHUB_WORKSPACE}/privado-core-and-rules/privado --skip-upload; } 2> ${GITHUB_WORKSPACE}/time_results/${{matrix.repo_name}}_time_${{ env.BASE_NAME }}.txt
 
       - name: Store ${{matrix.repo_name}}.json (${{github.base_ref}})
         run: cat ${GITHUB_WORKSPACE}/repos/${{matrix.repo_name}}/.privado/privado.json > ${GITHUB_WORKSPACE}/${{matrix.repo_name}}_results/${{ env.BASE_NAME }}/privado.json
