@@ -5,7 +5,7 @@ import scala.util.matching.Regex
 import scala.util.control.Breaks._
 import java.net.MalformedURLException
 import java.nio.charset.MalformedInputException
-import scala.io.Source
+// import scala.io.Source
 
 
 object ImportUtility {  
@@ -31,7 +31,7 @@ object ImportUtility {
     }
 
     private def returnImportStatements(filePath: String, language: String): Set[String] = {
-        val source = Source.fromFile(filePath)
+        val source = io.Source.fromFile(filePath)
         val matchImportRegex = getMatchImportRegex(language);
         val onlyLiteralWordRegex = getLiteralWordRegex(language);
 
