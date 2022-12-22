@@ -22,12 +22,10 @@
 
 package ai.privado.tagger.source
 
-import ai.privado.cache.RuleCache
-import ai.privado.model.{InternalTag, RuleInfo}
+import ai.privado.model.InternalTag
 import ai.privado.tagger.PrivadoSimplePass
 import ai.privado.utility.Utilities._
 import io.shiftleft.codepropertygraph.generated.Cpg
-import io.shiftleft.passes.ForkJoinParallelCpgPass
 import io.shiftleft.semanticcpg.language._
 import overflowdb.BatchedUpdate
 
@@ -35,7 +33,15 @@ class LiteralTagger(cpg: Cpg) extends PrivadoSimplePass(cpg) {
 
   override def run(builder: BatchedUpdate.DiffGraphBuilder): Unit = {
     // Step 1.2
-    val literals = cpg.literal.code("\"(" + ruleInfo.patterns.head + ")\"").l
+    // val literals = cpg.literal.code("\"(" + ruleInfo.patterns.head + ")\"").whereNot(_.code(".*\\s.*")).l
+    val literals = cpg
+      .call("(?:add|get|put|pop).*")
+      .argument
+      .where(_.argumentIndex(1))
+      .isLiteral
+      .code("\"(" + ruleInfo.combinedRulePattern + ")\"")
+      .whereNot(_.code(".*\\s.*"))
+      .l
     literals.foreach(literal => {
       storeForTag(builder, literal)(InternalTag.VARIABLE_REGEX_LITERAL.toString)
       addRuleTags(builder, literal, ruleInfo)
