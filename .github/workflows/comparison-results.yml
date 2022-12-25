@@ -277,11 +277,9 @@ jobs:
 
       - name: value
         run: |
-          MESSAGE=$(cat << EOF
-          '$(cat /home/runner/work/privado-core/privado-core/report/summary-report.txt)'
-          EOF
-          )
-          echo VALUE=$MESSAGE >> GITHUB_ENV
+          echo "MESSAGE<<EOF" >> $GITHUB_ENV
+          echo "$(cat /home/runner/work/privado-core/privado-core/report/summary-report.txt)" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
       - name: print
         run: ${{env.VALUE}}
