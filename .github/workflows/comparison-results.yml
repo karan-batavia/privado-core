@@ -270,7 +270,7 @@ jobs:
         run: cat /home/runner/work/privado-core/privado-core/report/summary-report.txt
 
       - name: set 
-        run: export MESSAGE=${cat /home/runner/work/privado-core/privado-core/report/summary-report.txt}
+        run: export MESSAGE=$(cat /home/runner/work/privado-core/privado-core/report/summary-report.txt)
 
       - name: ff
         run: echo $MESSAGE
