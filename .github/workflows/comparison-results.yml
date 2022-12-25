@@ -265,6 +265,21 @@ jobs:
         with:
           name: summary-report
           path: ./report
+
+      - name: show file
+        run: cat /home/runner/work/privado-core/privado-core/report/summary-report.txt
+
+      - name: set 
+        run: export MESSAGE=${cat /home/runner/work/privado-core/privado-core/report/summary-report.txt}
+
+      - name: ff
+        run: echo $MESSAGE
+
+      - name: check
+        run: echo "SUMMARY=$message" >> $GITHUB_ENV
+
+      - name: check 3
+        run: echo ${{ env.SUMMARY }}
       
       - name: Post results to slack
         uses: MeilCli/slack-upload-file@v3
@@ -272,5 +287,5 @@ jobs:
           slack_token: ${{ secrets.SLACK_TOKEN }}
           channel_id: ${{ secrets.SLACK_CHANNEL_ID }}
           file_path: "/home/runner/work/privado-core/privado-core/report/comparison_report.csv"
-          initial_comment: "Comparison Results generated on ${{github.event.repository.name}} by PR ${{github.event.number}} from branch ${{github.head_ref}} to ${{github.base_ref}} \nPR link https://github.com/Privado-Inc/privado-core/pull/${{github.event.number}} \nSummary Report ${cat /home/runner/work/privado-core/privado-core/report/summary-report.txt}"
+          initial_comment: "Comparison Results generated on ${{github.event.repository.name}} by PR ${{github.event.number}} from branch ${{github.head_ref}} to ${{github.base_ref}} \nPR link https://github.com/Privado-Inc/privado-core/pull/${{github.event.number}} \nSummary Report\n ${cat /home/runner/work/privado-core/privado-core/report/summary-report.txt}"
           file_type: "csv"
