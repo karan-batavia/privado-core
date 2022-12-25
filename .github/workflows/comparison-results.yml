@@ -275,7 +275,15 @@ jobs:
       - name: ff
         run: echo $MESSAGE
 
-      - name: check
+      - name: value
+        run: |
+          MESSAGE=$(cat << EOF
+          '$(cat /home/runner/work/privado-core/privado-core/report/summary-report.txt)'
+          EOF
+          )
+          echo VALUE=$MESSAGE >> GITHUB_ENV
+
+      - name: Set env variable
         run: echo "SUMMARY=$(cat /home/runner/work/privado-core/privado-core/report/summary-report.txt)" >> $GITHUB_ENV
 
       - name: check 3
