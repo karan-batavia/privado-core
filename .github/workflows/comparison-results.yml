@@ -276,7 +276,7 @@ jobs:
         run: echo $MESSAGE
 
       - name: check
-        run: echo "SUMMARY=$message" >> $GITHUB_ENV
+        run: echo "SUMMARY=$(cat /home/runner/work/privado-core/privado-core/report/summary-report.txt)" >> $GITHUB_ENV
 
       - name: check 3
         run: echo ${{ env.SUMMARY }}
