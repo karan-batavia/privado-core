@@ -283,6 +283,9 @@ jobs:
           )
           echo VALUE=$MESSAGE >> GITHUB_ENV
 
+      - name: print
+        run: ${{env.VALUE}}
+
       - name: Set env variable
         run: echo "SUMMARY=$(cat /home/runner/work/privado-core/privado-core/report/summary-report.txt)" >> $GITHUB_ENV
 
