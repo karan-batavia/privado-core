@@ -242,7 +242,7 @@ jobs:
           name: final-report
           path: /home/runner/work/privado-core/privado-core/comparison_report.csv
       
-      - name: upload Summary report for Next job
+      - name: upload Summary Report for Next job
         uses: actions/upload-artifact@master
         with:
           name: summary-report
