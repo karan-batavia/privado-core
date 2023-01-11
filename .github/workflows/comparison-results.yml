@@ -23,7 +23,7 @@ jobs:
         run: echo "${{ github.event.pull_request.head.repo.full_name }}"
 
       - name: tttttt
-        run: echo "${{ github.event.pull_request.head.repo.default_branch }}"
+        run: echo "${{ github.event.pull_request.head.repo.name }}"
           
       - name: Install JDK-18
         uses: actions/setup-java@v3
