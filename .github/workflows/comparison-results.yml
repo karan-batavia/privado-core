@@ -10,11 +10,14 @@ jobs:
   build_privado:
     strategy:
       matrix:
-        ref: [{ branch: "${{github.head_ref}}", owner: "${{ github.event.pull_request.head.repo.owner.login }}"}, { branch: "${{github.base_ref}}", owner: "${{ github.event.pull_request.base.repo.owner.login }}"}]
+        ref: [{ branch: "${{github.head_ref}}", owner: "${echo ${{ github.event.pull_request.head.repo.full_name }}%:*}"}, { branch: "${{github.base_ref}}", owner: "${{ github.event.pull_request.base.repo.owner.login }}"}]
           
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
+      - name: rr
+        run: echo ${{ matrix.ref.owner}}
 
       - name: ttt
         run: echo "${{ github.event.pull_request.head.repo.owner.name }}"
