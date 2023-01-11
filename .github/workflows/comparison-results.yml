@@ -3,14 +3,12 @@ name: Monitoring Stability and Comparing Results
 # Triggers when a pull_request or a push action is configured on master branch
 on:
   pull_request_target:
-    branches:
-      - "**"
 
 jobs:
   build_privado:
     strategy:
       matrix:
-        ref: [{ branch: "${{github.head_ref}}", owner: "${echo ${{ github.event.pull_request.head.repo.full_name }}%:*}"}, { branch: "${{github.base_ref}}", owner: "${{ github.event.pull_request.base.repo.owner.login }}"}]
+        ref: [{ branch: "${{github.head_ref}}", owner: "${${{ github.event.pull_request.head.repo.full_name }}%:*}"}, { branch: "${{github.base_ref}}", owner: "${${{ github.event.pull_request.base.repo.owner.login }}%:*}"}]
           
     runs-on: ubuntu-latest
     steps:
