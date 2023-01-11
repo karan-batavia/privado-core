@@ -22,9 +22,6 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '18'
-        
-      - name: checking
-        run: echo "aaya"
 
       - name: Export Java Home Path
         run: export PATH=$JAVA_HOME/bin:$PATH
