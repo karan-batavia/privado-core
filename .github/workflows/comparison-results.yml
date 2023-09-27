@@ -14,7 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-          
+
+      - name: List language
+        run: echo ${{matrix.language}}.txt
+
       - name: Install JDK-18
         uses: actions/setup-java@v3
         with:
@@ -37,9 +40,10 @@ jobs:
           repository: Privado-Inc/standalone-monitoring-stability
           path: ./temp/standalone-monitoring-stability
           ref: parallel-test
-      
+
+      # Pass the langauge specific repository file
       - name: Run the script for ${{github.head_ref}} and ${{github.base_ref}}
-        run: cd ./temp/standalone-monitoring-stability && pip install -r requirements.txt && python3 ./run.py -r ${{ matrix.langauge }}.txt -b ${{github.base_ref}} -h ${{github.head_ref}} -bcr ${{ github.event.pull_request.base.repo.html_url }} -hcr ${{ github.event.pull_request.head.repo.html_url }} -guf
+        run: cd ./temp/standalone-monitoring-stability && pip install -r requirements.txt && python3 ./run.py -r ./repos/${{ matrix.langauge }}.txt -b ${{github.base_ref}} -h ${{github.head_ref}} -bcr ${{ github.event.pull_request.base.repo.html_url }} -hcr ${{ github.event.pull_request.head.repo.html_url }} -guf
         
       - name: Run aws-export
         run: cd ./temp/standalone-monitoring-stability/ && python3 aws-export.py ${{github.event.number}}
