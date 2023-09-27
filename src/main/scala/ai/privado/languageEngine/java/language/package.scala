@@ -27,11 +27,13 @@ import io.shiftleft.codepropertygraph.generated.{Cpg, EdgeTypes, NodeTypes}
 import io.shiftleft.codepropertygraph.generated.nodes.{AstNode, CfgNode, File, JavaProperty, Literal, MethodParameterIn}
 import overflowdb.traversal._
 
+import scala.jdk.CollectionConverters.IteratorHasAsScala
+
 package object language {
 
   implicit class NodeStarters(cpg: Cpg) {
     def property: Traversal[JavaProperty] =
-      cpg.graph.nodes(NodeTypes.JAVA_PROPERTY).cast[JavaProperty]
+      cpg.graph.nodes(NodeTypes.JAVA_PROPERTY).asScala.cast[JavaProperty]
   }
 
   implicit class StepsForProperty(val trav: Traversal[JavaProperty]) extends AnyVal {
@@ -41,7 +43,7 @@ package object language {
 
   }
 
-  implicit class NodeTravToProperty(val trav: Traversal[CfgNode]) {
+  implicit class NodeTravToProperty(val trav: Traversal[AstNode]) {
     def originalProperty: Traversal[JavaProperty] = trav.out(EdgeTypes.ORIGINAL_PROPERTY).cast[JavaProperty]
   }
 

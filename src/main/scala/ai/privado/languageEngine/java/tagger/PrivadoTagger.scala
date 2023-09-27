@@ -23,85 +23,75 @@
 
 package ai.privado.languageEngine.java.tagger
 
-import ai.privado.cache.RuleCache
-import ai.privado.entrypoint.{ScanProcessor, TimeMetric}
+import ai.privado.cache.{RuleCache, TaggerCache}
+import ai.privado.entrypoint.{PrivadoInput, ScanProcessor}
 import ai.privado.languageEngine.java.feeder.StorageInheritRule
-import ai.privado.languageEngine.java.tagger.collection.CollectionTagger
-import ai.privado.languageEngine.java.tagger.sink.{CustomInheritTagger, JavaAPITagger}
-import ai.privado.languageEngine.java.tagger.source.{IdentifierNonMemberTagger, IdentifierTagger}
-import ai.privado.model.ConfigAndRules
+import ai.privado.languageEngine.java.passes.read.{
+  DatabaseQueryReadPass,
+  DatabaseRepositoryReadPass,
+  EntityMapper,
+  MessagingConsumerReadPass
+}
+import ai.privado.languageEngine.java.tagger.collection.{CollectionTagger, GrpcCollectionTagger, SOAPCollectionTagger}
+import ai.privado.languageEngine.java.tagger.config.JavaDBConfigTagger
+import ai.privado.languageEngine.java.tagger.sink.{InheritMethodTagger, JavaAPITagger, MessagingConsumerCustomTagger}
+import ai.privado.languageEngine.java.tagger.source.{IdentifierTagger, InSensitiveCallTagger}
 import ai.privado.tagger.PrivadoBaseTagger
-import ai.privado.tagger.config.DBConfigTagger
+import ai.privado.tagger.collection.WebFormsCollectionTagger
 import ai.privado.tagger.sink.RegularSinkTagger
-import ai.privado.tagger.source.LiteralTagger
+import ai.privado.tagger.source.{LiteralTagger, SqlQueryTagger}
 import io.shiftleft.codepropertygraph.generated.Cpg
 import io.shiftleft.codepropertygraph.generated.nodes.Tag
-import io.shiftleft.semanticcpg.language._
+import io.shiftleft.semanticcpg.language.*
 import org.slf4j.LoggerFactory
 import overflowdb.traversal.Traversal
-
-import java.util.Calendar
 
 class PrivadoTagger(cpg: Cpg) extends PrivadoBaseTagger {
   private val logger = LoggerFactory.getLogger(this.getClass)
 
-  override def runTagger(rules: ConfigAndRules): Traversal[Tag] = {
+  override def runTagger(
+    ruleCache: RuleCache,
+    taggerCache: TaggerCache,
+    privadoInputConfig: PrivadoInput
+  ): Traversal[Tag] = {
 
     logger.info("Starting tagging")
-    val sourceRules = rules.sources
 
-    println(s"${TimeMetric.getNewTimeAndSetItToStageLast()} - --LiteralTagger invoked...")
-    new LiteralTagger(cpg).createAndApply()
-    println(
-      s"${TimeMetric.getNewTime()} - --LiteralTagger is done in \t\t\t- ${TimeMetric.setNewTimeToStageLastAndGetTimeDiff()}"
-    )
+    new LiteralTagger(cpg, ruleCache).createAndApply()
 
-    println(s"${Calendar.getInstance().getTime} - --IdentifierTagger invoked...")
-    new IdentifierTagger(cpg).createAndApply()
-    println(
-      s"${TimeMetric.getNewTime()} - --IdentifierTagger is done in \t\t\t- ${TimeMetric.setNewTimeToStageLastAndGetTimeDiff()}"
-    )
+    new SqlQueryTagger(cpg, ruleCache).createAndApply()
 
-    println(s"${Calendar.getInstance().getTime} - --IdentifierTagger Non Member tagger invoked...")
-    new IdentifierNonMemberTagger(cpg).createAndApply()
-    println(
-      s"${TimeMetric.getNewTime()} - --IdentifierTagger Non Member is done in \t- ${TimeMetric.setNewTimeToStageLastAndGetTimeDiff()}"
-    )
+    new IdentifierTagger(cpg, ruleCache, taggerCache).createAndApply()
 
-    println(s"${Calendar.getInstance().getTime} - --DBConfigTagger invoked...")
-    new DBConfigTagger(cpg).createAndApply()
-    println(
-      s"${TimeMetric.getNewTime()} - --DBConfigTagger is done in \t\t\t- ${TimeMetric.setNewTimeToStageLastAndGetTimeDiff()}"
-    )
+    new InSensitiveCallTagger(cpg, ruleCache, taggerCache).createAndApply()
 
-    println(s"${Calendar.getInstance().getTime} - --RegularSinkTagger invoked...")
-    new RegularSinkTagger(cpg).createAndApply()
-    println(
-      s"${TimeMetric.getNewTime()} - --RegularSinkTagger is done in \t\t\t- ${TimeMetric.setNewTimeToStageLastAndGetTimeDiff()}"
-    )
+    new JavaDBConfigTagger(cpg).createAndApply()
 
-    println(s"${Calendar.getInstance().getTime} - --APITagger invoked...")
-    new JavaAPITagger(cpg).createAndApply()
-    println(
-      s"${TimeMetric.getNewTime()} - --APITagger is done in \t\t\t\t- ${TimeMetric.setNewTimeToStageLastAndGetTimeDiff()}"
-    )
+    new RegularSinkTagger(cpg, ruleCache).createAndApply()
+
+    new JavaAPITagger(cpg, ruleCache, privadoInputConfig).createAndApply()
     // Custom Rule tagging
     if (!ScanProcessor.config.ignoreInternalRules) {
       // Adding custom rule to cache
-      StorageInheritRule.rules.foreach(RuleCache.setRuleInfo)
-      println(s"${Calendar.getInstance().getTime} - --CustomInheritTagger invoked...")
-      new CustomInheritTagger(cpg).createAndApply()
-      println(
-        s"${TimeMetric.getNewTime()} - --CustomInheritTagger is done in \t\t- ${TimeMetric.setNewTimeToStageLastAndGetTimeDiff()}"
-      )
+      StorageInheritRule.rules.foreach(ruleCache.setRuleInfo)
+      new InheritMethodTagger(cpg, ruleCache).createAndApply()
+      new MessagingConsumerCustomTagger(cpg, ruleCache).createAndApply()
+      new MessagingConsumerReadPass(cpg, taggerCache).createAndApply()
     }
 
-    println(s"${Calendar.getInstance().getTime} - --CollectionTagger invoked...")
-    val collectionTagger = new CollectionTagger(cpg, sourceRules)
-    new CollectionTagger(cpg, RuleCache.getRule.sources).createAndApply()
-    println(
-      s"${TimeMetric.getNewTime()} - --CollectionTagger is done in \t\t\t- ${TimeMetric.setNewTimeToStageLastAndGetTimeDiff()}"
-    )
+    new DatabaseQueryReadPass(cpg, ruleCache, taggerCache, privadoInputConfig, EntityMapper.getClassTableMapping(cpg))
+      .createAndApply()
+
+    new DatabaseRepositoryReadPass(cpg, taggerCache).createAndApply()
+
+    new CollectionTagger(cpg, ruleCache).createAndApply()
+
+    new SOAPCollectionTagger(cpg, ruleCache).createAndApply()
+
+    new GrpcCollectionTagger(cpg, ruleCache).createAndApply()
+
+    new WebFormsCollectionTagger(cpg, ruleCache).createAndApply()
+
     logger.info("Done with tagging")
 
     cpg.tag

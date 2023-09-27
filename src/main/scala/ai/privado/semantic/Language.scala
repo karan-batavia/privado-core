@@ -23,12 +23,50 @@
 package ai.privado.semantic
 
 import ai.privado.dataflow.Dataflow
-import io.shiftleft.codepropertygraph.generated.Cpg
+import io.shiftleft.codepropertygraph.generated.{Cpg, EdgeTypes, NodeTypes}
+import io.shiftleft.codepropertygraph.generated.nodes.{File, SqlColumnNode, SqlQueryNode, SqlTableNode, DbNode}
 import io.shiftleft.semanticcpg.language.{DefaultNodeExtensionFinder, NodeExtensionFinder}
+import overflowdb.traversal._
+
+import scala.jdk.CollectionConverters.IteratorHasAsScala
 
 object Language {
 
   implicit val finder: NodeExtensionFinder         = DefaultNodeExtensionFinder
   implicit def privadoDataflow(cpg: Cpg): Dataflow = new Dataflow(cpg)
 
+  implicit class NodeStarterForSqlQueryNode(cpg: Cpg) {
+    def sqlQuery: Traversal[SqlQueryNode] =
+      cpg.graph.nodes(NodeTypes.SQL_QUERY_NODE).asScala.cast[SqlQueryNode]
+
+    def sqlTable: Traversal[SqlTableNode] =
+      cpg.graph.nodes(NodeTypes.SQL_TABLE_NODE).asScala.cast[SqlTableNode]
+
+    def sqlColumn: Traversal[SqlColumnNode] =
+      cpg.graph.nodes(NodeTypes.SQL_COLUMN_NODE).asScala.cast[SqlColumnNode]
+  }
+
+  implicit class NodeStarterForDBNode(cpg: Cpg) {
+    def dbNode: Traversal[DbNode] =
+      cpg.graph.nodes(NodeTypes.DB_NODE).asScala.cast[DbNode]
+  }
+
+  implicit class StepsForPropertyForDbNode(val trav: Traversal[DbNode]) extends AnyVal {
+    def file: Traversal[File] = trav.out(EdgeTypes.SOURCE_FILE).cast[File]
+
+  }
+  implicit class StepsForPropertyForSqlQueryNode(val trav: Traversal[SqlQueryNode]) extends AnyVal {
+    def file: Traversal[File] = trav.out(EdgeTypes.SOURCE_FILE).cast[File]
+
+  }
+
+  implicit class StepsForPropertyForSqlTableNode(val trav: Traversal[SqlTableNode]) extends AnyVal {
+    def file: Traversal[File] = trav.out(EdgeTypes.SOURCE_FILE).cast[File]
+
+  }
+
+  implicit class StepsForPropertyForSqlColumnNode(val trav: Traversal[SqlColumnNode]) extends AnyVal {
+    def file: Traversal[File] = trav.out(EdgeTypes.SOURCE_FILE).cast[File]
+
+  }
 }

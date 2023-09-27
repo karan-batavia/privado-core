@@ -23,8 +23,8 @@
 
 package ai.privado.languageEngine.java
 
-import ai.privado.cache.RuleCache
-import ai.privado.model.ConfigAndRules
+import ai.privado.cache.{AppCache, RuleCache, TaggerCache}
+import ai.privado.model.{CatLevelOne, ConfigAndRules, Language, NodeType, RuleInfo}
 import better.files.File
 import io.joern.javasrc2cpg.{Config, JavaSrc2Cpg}
 import io.shiftleft.codepropertygraph.generated.Cpg
@@ -38,18 +38,19 @@ abstract class JavaTaggingTestBase extends AnyWordSpec with Matchers with Before
   val javaFileContents: String
   var inputDir: File   = _
   var outputFile: File = _
-  val rule: ConfigAndRules
+  val ruleCache        = new RuleCache()
 
   override def beforeAll(): Unit = {
     inputDir = File.newTemporaryDirectory()
     (inputDir / "generalFile.java").write(javaFileContents)
     (inputDir / "unrelated.file").write("foo")
     outputFile = File.newTemporaryFile()
-    val config = Config(inputPath = inputDir.toString(), outputPath = outputFile.toString())
+    val config = Config().withInputPath(inputDir.pathAsString).withOutputPath(outputFile.pathAsString)
     cpg = new JavaSrc2Cpg().createCpg(config).get
 
     // Caching Rule
-    RuleCache.setRule(rule)
+    ruleCache.setRule(rule)
+    AppCache.repoLanguage = Language.JAVA
     super.beforeAll()
   }
 
@@ -60,4 +61,46 @@ abstract class JavaTaggingTestBase extends AnyWordSpec with Matchers with Before
     super.afterAll()
   }
 
+  val sourceRule = List(
+    RuleInfo(
+      "Data.Sensitive.FirstName",
+      "FirstName",
+      "",
+      Array(),
+      List("(?i).*firstName.*"),
+      false,
+      "",
+      Map(),
+      NodeType.REGULAR,
+      "",
+      CatLevelOne.SOURCES,
+      "",
+      Language.JAVA,
+      Array()
+    )
+  )
+
+  val collectionRule = List(
+    RuleInfo(
+      "Collections.Annotation.Spring",
+      "Spring Web Interface Annotation",
+      "",
+      Array(),
+      List("RequestMapping|PostMapping|PutMapping|GetMapping|DeleteMapping"),
+      false,
+      "",
+      Map(),
+      NodeType.REGULAR,
+      "",
+      CatLevelOne.COLLECTIONS,
+      "",
+      Language.JAVA,
+      Array()
+    )
+  )
+
+  val rule: ConfigAndRules =
+    ConfigAndRules(sourceRule, List(), collectionRule, List(), List(), List(), List(), List(), List(), List())
+
+  val taggerCache = new TaggerCache()
 }

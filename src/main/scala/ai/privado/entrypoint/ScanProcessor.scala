@@ -26,7 +26,10 @@ import ai.privado.cache.{AppCache, Environment, RuleCache}
 import ai.privado.languageEngine.java.processor.JavaProcessor
 import ai.privado.languageEngine.javascript.processor.JavascriptProcessor
 import ai.privado.languageEngine.python.processor.PythonProcessor
+import ai.privado.languageEngine.ruby.processor.RubyProcessor
+import ai.privado.languageEngine.default.processor.DefaultProcessor
 import ai.privado.metric.MetricHandler
+import ai.privado.model.Language.Language
 import ai.privado.model._
 import ai.privado.rulevalidator.YamlFileValidator
 import ai.privado.utility.Utilities.isValidRule
@@ -41,6 +44,7 @@ import java.util.Calendar
 import scala.collection.parallel.CollectionConverters.ImmutableIterableIsParallelizable
 import scala.sys.exit
 import scala.util.{Failure, Success, Try}
+import privado_core.BuildInfo
 
 object ScanProcessor extends CommandProcessor {
   private val logger = LoggerFactory.getLogger(this.getClass)
@@ -55,10 +59,11 @@ object ScanProcessor extends CommandProcessor {
       List[RuleInfo](),
       List[Semantic](),
       List[RuleInfo](),
-      List[SystemConfig]()
+      List[SystemConfig](),
+      List[RuleInfo]()
     )
 
-  def parseRules(rulesPath: String, lang: String): ConfigAndRules = {
+  def parseRules(rulesPath: String, lang: Language): ConfigAndRules = {
     logger.trace(s"parsing rules from -> '$rulesPath'")
     val ir: File = {
       // e.g. rulesPath = /home/pandurang/projects/rules-home/
@@ -70,18 +75,13 @@ object ScanProcessor extends CommandProcessor {
           exit(1)
       }
     }
-    val langToFilter = lang match {
-      case Languages.JAVASRC   => Language.JAVA
-      case Languages.JSSRC     => Language.JAVASCRIPT
-      case Languages.PYTHONSRC => Language.PYTHON
-      case _                   => Language.JAVA
-    }
+
     def filterByLang(rule: RuleInfo): Boolean =
-      rule.language == langToFilter || rule.language == Language.DEFAULT || rule.language == Language.UNKNOWN
+      rule.language == lang || rule.language == Language.DEFAULT || rule.language == Language.UNKNOWN
     def filterSemanticByLang(rule: Semantic): Boolean =
-      rule.language == langToFilter || rule.language == Language.DEFAULT || rule.language == Language.UNKNOWN
+      rule.language == lang || rule.language == Language.DEFAULT || rule.language == Language.UNKNOWN
     def filterSystemConfigByLang(rule: SystemConfig): Boolean =
-      rule.language == langToFilter || rule.language == Language.DEFAULT || rule.language == Language.UNKNOWN
+      rule.language == lang || rule.language == Language.DEFAULT || rule.language == Language.UNKNOWN
     val parsedRules =
       try
         ir.listRecursively.toList.par
@@ -143,6 +143,7 @@ object ScanProcessor extends CommandProcessor {
                           x.copy(
                             file = fullPath,
                             catLevelOne = CatLevelOne.withNameWithDefault(pathTree.apply(1)),
+                            catLevelTwo = pathTree.apply(2),
                             categoryTree = pathTree,
                             nodeType = NodeType.REGULAR
                           )
@@ -175,7 +176,17 @@ object ScanProcessor extends CommandProcessor {
                             language = Language.withNameWithDefault(pathTree.last)
                           )
                         )
-                        .filter(filterSystemConfigByLang)
+                        .filter(filterSystemConfigByLang),
+                      auditConfig = configAndRules.auditConfig
+                        .map(x =>
+                          x.copy(
+                            file = fullPath,
+                            categoryTree = pathTree,
+                            catLevelTwo = pathTree.apply(2),
+                            language = Language.withNameWithDefault(pathTree.last)
+                          )
+                        )
+                        .filter(filterByLang)
                     )
                   case Left(error) =>
                     logger.error("Error while parsing this file -> '" + fullPath)
@@ -198,7 +209,8 @@ object ScanProcessor extends CommandProcessor {
               threats = a.threats ++ b.threats,
               semantics = a.semantics ++ b.semantics,
               sinkSkipList = a.sinkSkipList ++ b.sinkSkipList,
-              systemConfig = a.systemConfig ++ b.systemConfig
+              systemConfig = a.systemConfig ++ b.systemConfig,
+              auditConfig = a.auditConfig ++ b.auditConfig
             )
           )
       catch {
@@ -209,12 +221,20 @@ object ScanProcessor extends CommandProcessor {
       }
     parsedRules
   }
-
-  def processRules(lang: String): ConfigAndRules = {
+  def mergePatterns(ruleInfoList: List[RuleInfo]): List[RuleInfo] = {
+    ruleInfoList
+      .groupBy(_.id)
+      .map { case (_, item) =>
+        val combinedPatterns = item.flatMap(_.patterns)
+        item.head.copy(patterns = combinedPatterns)
+      }
+      .toList
+  }
+  def processRules(lang: Language, ruleCache: RuleCache): ConfigAndRules = {
     var internalConfigAndRules = getEmptyConfigAndRule
     if (!config.ignoreInternalRules) {
       internalConfigAndRules = parseRules(config.internalConfigPath.head, lang)
-      RuleCache.setInternalRules(internalConfigAndRules)
+      ruleCache.setInternalRules(internalConfigAndRules)
 
       try {
         AppCache.privadoVersionMain = File((s"${config.internalConfigPath.head}/version.txt")).contentAsString
@@ -248,30 +268,33 @@ object ScanProcessor extends CommandProcessor {
     val semantics    = externalConfigAndRules.semantics ++ internalConfigAndRules.semantics
     val sinkSkipList = externalConfigAndRules.sinkSkipList ++ internalConfigAndRules.sinkSkipList
     val systemConfig = externalConfigAndRules.systemConfig ++ internalConfigAndRules.systemConfig
+    val auditConfig  = externalConfigAndRules.auditConfig ++ internalConfigAndRules.auditConfig
     val mergedRules =
       ConfigAndRules(
-        sources = sources.distinctBy(_.id),
-        sinks = sinks.distinctBy(_.id),
-        collections = collections.distinctBy(_.id),
+        sources = mergePatterns(sources),
+        sinks = mergePatterns(sinks),
+        collections = mergePatterns(collections),
         policies = policies.distinctBy(_.id),
-        exclusions = exclusions.distinctBy(_.id),
+        exclusions = mergePatterns(exclusions),
         threats = threats.distinctBy(_.id),
         semantics = semantics.distinctBy(_.signature),
         sinkSkipList = sinkSkipList.distinctBy(_.id),
-        systemConfig = systemConfig
+        systemConfig = systemConfig,
+        auditConfig = auditConfig.distinctBy(_.id)
       )
     logger.trace(mergedRules.toString)
     println(s"${Calendar.getInstance().getTime} - Configuration parsed...")
 
-    RuleCache.internalPolicies.addAll(internalConfigAndRules.policies.map(policy => (policy.id)))
-    RuleCache.internalPolicies.addAll(internalConfigAndRules.threats.map(threat => (threat.id)))
+    ruleCache.internalPolicies.addAll(internalConfigAndRules.policies.map(policy => (policy.id)))
+    ruleCache.internalPolicies.addAll(internalConfigAndRules.threats.map(threat => (threat.id)))
     MetricHandler.metricsData("noOfRulesUsed") = {
       Json.fromInt(
         mergedRules.sources.size +
           mergedRules.sinks.size +
           mergedRules.collections.size +
           mergedRules.policies.size +
-          mergedRules.exclusions.size
+          mergedRules.exclusions.size +
+          mergedRules.auditConfig.size
       )
     }
 
@@ -280,22 +303,24 @@ object ScanProcessor extends CommandProcessor {
   override def process(): Either[String, Unit] = {
     println(s"Privado CLI Version: ${Environment.privadoVersionCli.getOrElse(Constants.notDetected)}")
     println(s"Privado Core Version: ${Environment.privadoVersionCore}")
+    println(s"Privado Language Engine Version: ${BuildInfo.joernVersion}")
     if (!File(config.sourceLocation.head).isWritable) {
       println(s"Warning: Privado doesn't have write permission on give repo location - ${config.sourceLocation.head}")
     }
     processCpg()
   }
 
-  /** Helper function to process rule for a language and cache the result in ruleCache
+  /** Helper function to process rule for a language
     * @param lang
     * @return
-    *   rule
+    *   processed rules
     */
-  def processAndCacheRule(lang: String): ConfigAndRules = {
-    val processedRules = processRules(lang)
-    logger.info("Caching rules")
-    RuleCache.setRule(processedRules)
-    processedRules
+  def getProcessedRule(lang: Language): RuleCache = {
+    AppCache.repoLanguage = lang // we are caching the repo language here, and we will use this to get the repo's lang
+    val ruleCache      = new RuleCache()
+    val processedRules = processRules(lang, ruleCache)
+    ruleCache.setRule(processedRules)
+    ruleCache
   }
 
   private def processCpg() = {
@@ -313,29 +338,30 @@ object ScanProcessor extends CommandProcessor {
             lang match {
               case language if language == Languages.JAVASRC || language == Languages.JAVA =>
                 println(s"${Calendar.getInstance().getTime} - Detected language 'Java'")
-                JavaProcessor.createJavaCpg(processAndCacheRule(lang), sourceRepoLocation, language)
-              case language if language == Languages.JSSRC && config.enableJS =>
+                JavaProcessor.createJavaCpg(getProcessedRule(Language.JAVA), sourceRepoLocation, language)
+              case language if language == Languages.JSSRC =>
                 println(s"${Calendar.getInstance().getTime} - Detected language 'JavaScript'")
-                JavascriptProcessor.createJavaScriptCpg(processAndCacheRule(lang), sourceRepoLocation, lang)
+                JavascriptProcessor.createJavaScriptCpg(getProcessedRule(Language.JAVASCRIPT), sourceRepoLocation, lang)
               case language if language == Languages.PYTHONSRC =>
                 println(s"${Calendar.getInstance().getTime} - Detected language 'Python'")
-                PythonProcessor.createPythonCpg(processAndCacheRule(lang), sourceRepoLocation, lang)
+                PythonProcessor.createPythonCpg(getProcessedRule(Language.PYTHON), sourceRepoLocation, lang)
+              case language if language == Languages.RUBYSRC =>
+                println(s"${Calendar.getInstance().getTime} - Detected language 'Ruby'")
+                RubyProcessor.createRubyCpg(getProcessedRule(Language.RUBY), sourceRepoLocation, lang)
               case _ =>
                 if (checkJavaSourceCodePresent(sourceRepoLocation)) {
                   println(
                     s"We detected presence of 'Java' code base along with other major language code base '${lang}'."
                   )
                   println(s"However we only support 'Java' code base scanning as of now.")
-                  JavaProcessor.createJavaCpg(processAndCacheRule(Languages.JAVASRC), sourceRepoLocation, lang)
+
+                  JavaProcessor.createJavaCpg(getProcessedRule(Language.JAVA), sourceRepoLocation, lang)
                 } else {
-                  println(s"As of now we only support privacy code scanning for 'Java' code base.")
-                  println(s"We detected this code base of '${lang}'.")
-                  exit(1)
+                  processCpgWithDefaultProcessor(sourceRepoLocation)
                 }
             }
           case _ =>
-            logger.error("Unable to detect language! Is it supported yet?")
-            Left("Unable to detect language!")
+            processCpgWithDefaultProcessor(sourceRepoLocation)
         }
       }
       case Failure(exc) =>
@@ -343,6 +369,12 @@ object ScanProcessor extends CommandProcessor {
         println(s"Error Occurred: ${exc.getMessage}")
         exit(1)
     }
+  }
+
+  private def processCpgWithDefaultProcessor(sourceRepoLocation: String) = {
+    MetricHandler.metricsData("language") = Json.fromString("default")
+    println(s"Running scan with default processor.")
+    DefaultProcessor.createDefaultCpg(getProcessedRule(Language.UNKNOWN), sourceRepoLocation)
   }
 
   private def checkJavaSourceCodePresent(sourcePath: String): Boolean = {
@@ -358,6 +390,4 @@ object ScanProcessor extends CommandProcessor {
     }
     sourceLocation.listRecursively.count(f => f.extension(toLowerCase = true).toString.contains(".java")) > 0
   }
-
-  override var config: PrivadoInput = _
 }

@@ -1,59 +1,61 @@
 package ai.privado.languageEngine.python.tagger
 
-import ai.privado.cache.RuleCache
-import ai.privado.entrypoint.TimeMetric
-import ai.privado.languageEngine.python.tagger.sink.PythonAPITagger
+import ai.privado.cache.{RuleCache, TaggerCache}
+import ai.privado.entrypoint.PrivadoInput
+import ai.privado.languageEngine.python.config.PythonDBConfigTagger
+import ai.privado.languageEngine.python.feeder.StorageInheritRule
+import ai.privado.languageEngine.python.passes.read.DatabaseReadPass
 import ai.privado.languageEngine.python.tagger.collection.CollectionTagger
-import ai.privado.languageEngine.python.tagger.source.IdentifierTagger
-import ai.privado.model.{ConfigAndRules, NodeType}
+import ai.privado.languageEngine.python.tagger.sink.{InheritMethodTagger, PythonAPITagger}
+import ai.privado.languageEngine.python.tagger.source.{IdentifierTagger, LiteralTagger}
 import ai.privado.tagger.PrivadoBaseTagger
-import ai.privado.tagger.sink.{APITagger, RegularSinkTagger}
-import ai.privado.tagger.source.LiteralTagger
+import ai.privado.tagger.collection.WebFormsCollectionTagger
+import ai.privado.tagger.sink.{LogShareSinkTagger, RegularSinkTagger}
+import ai.privado.tagger.source.SqlQueryTagger
 import io.shiftleft.codepropertygraph.generated.Cpg
 import io.shiftleft.codepropertygraph.generated.nodes.Tag
-import io.shiftleft.semanticcpg.language._
+import io.shiftleft.semanticcpg.language.*
 import org.slf4j.LoggerFactory
 import overflowdb.traversal.Traversal
-
-import java.util.Calendar
 
 class PrivadoTagger(cpg: Cpg) extends PrivadoBaseTagger {
   private val logger = LoggerFactory.getLogger(this.getClass)
 
-  override def runTagger(rules: ConfigAndRules): Traversal[Tag] = {
+  override def runTagger(
+    ruleCache: RuleCache,
+    taggerCache: TaggerCache,
+    privadoInputConfig: PrivadoInput
+  ): Traversal[Tag] = {
 
     logger.info("Starting tagging")
 
-    println(s"${TimeMetric.getNewTimeAndSetItToStageLast()} - --LiteralTagger invoked...")
-    new LiteralTagger(cpg).createAndApply()
-    println(
-      s"${TimeMetric.getNewTime()} - --LiteralTagger is done in \t\t\t- ${TimeMetric.setNewTimeToStageLastAndGetTimeDiff()}"
-    )
-    println(s"${Calendar.getInstance().getTime} - --IdentifierTagger invoked...")
-    new IdentifierTagger(cpg).createAndApply()
-    println(
-      s"${TimeMetric.getNewTime()} - --IdentifierTagger is done in \t\t\t- ${TimeMetric.setNewTimeToStageLastAndGetTimeDiff()}"
-    )
-    println(s"${Calendar.getInstance().getTime} - --APITagger invoked...")
-    new PythonAPITagger(cpg).createAndApply()
-    println(
-      s"${TimeMetric.getNewTime()} - --APITagger is done in \t\t\t- ${TimeMetric.setNewTimeToStageLastAndGetTimeDiff()}"
-    )
+    new LiteralTagger(cpg, ruleCache).createAndApply()
 
-    println(s"${Calendar.getInstance().getTime} - --RegularSinkTagger invoked...")
-    new RegularSinkTagger(cpg).createAndApply()
-    println(
-      s"${TimeMetric.getNewTime()} - --RegularSinkTagger is done in \t\t\t- ${TimeMetric.setNewTimeToStageLastAndGetTimeDiff()}"
-    )
+    new IdentifierTagger(cpg, ruleCache, taggerCache).createAndApply()
 
-    println(s"${Calendar.getInstance().getTime} - --CollectionTagger invoked...")
-    new CollectionTagger(cpg, RuleCache.getRule.sources).createAndApply()
-    println(
-      s"${TimeMetric.getNewTime()} - --CollectionTagger is done in \t\t\t- ${TimeMetric.setNewTimeToStageLastAndGetTimeDiff()}"
-    )
+    new SqlQueryTagger(cpg, ruleCache).createAndApply()
+
+    new PythonAPITagger(cpg, ruleCache, privadoInput = privadoInputConfig).createAndApply()
+
+    new PythonDBConfigTagger(cpg).createAndApply()
+
+    // Custom Rule tagging
+    // Adding custom rule to cache
+    StorageInheritRule.rules.foreach(ruleCache.setRuleInfo)
+
+    new InheritMethodTagger(cpg, ruleCache).createAndApply()
+
+    new RegularSinkTagger(cpg, ruleCache).createAndApply()
+
+    new LogShareSinkTagger(cpg, ruleCache).createAndApply()
+
+    new CollectionTagger(cpg, ruleCache).createAndApply()
+
+    new DatabaseReadPass(cpg, ruleCache, taggerCache).createAndApply()
+
+    new WebFormsCollectionTagger(cpg, ruleCache).createAndApply()
 
     logger.info("Done with tagging")
-
     cpg.tag
   }
 

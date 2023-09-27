@@ -27,6 +27,7 @@ local.properties
 .settings/
 .loadpath
 .recommenders
+.idea/
 
 # External tool builders
 .externalToolBuilders/
@@ -246,3 +247,6 @@ project/plugins/project/
 /.idea/codeStyles/codeStyleConfig.xml
 /.metals
 /.vscode
+
+/domain-classes/src
+/domain-classes/target

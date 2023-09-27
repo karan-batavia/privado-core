@@ -22,29 +22,44 @@
 
 package ai.privado.utility
 
-import ai.privado.cache.{RuleCache, TaggerCache}
-import ai.privado.entrypoint.ScanProcessor
+import ai.privado.cache.{AppCache, DatabaseDetailsCache, RuleCache}
+import ai.privado.entrypoint.{PrivadoInput, ScanProcessor}
 import ai.privado.metric.MetricHandler
 import ai.privado.model.CatLevelOne.CatLevelOne
-import ai.privado.model._
+import ai.privado.model.Constants.outputDirectoryName
+import ai.privado.model.*
 import better.files.File
 import io.joern.dataflowengineoss.DefaultSemantics
-import io.joern.dataflowengineoss.semanticsloader.{Parser, Semantics}
+import io.joern.dataflowengineoss.queryengine.{EngineConfig, EngineContext}
+import io.joern.dataflowengineoss.semanticsloader.Semantics
+import io.shiftleft.codepropertygraph.generated.nodes.JavaProperty
+//import java.io.File
 import io.joern.x2cpg.SourceFiles
-import io.shiftleft.codepropertygraph.generated.nodes.{AstNode, CfgNode, NewTag}
-import io.shiftleft.codepropertygraph.generated.{Cpg, EdgeTypes}
+import io.shiftleft.codepropertygraph.generated.nodes.{AstNode, CfgNode, NewFile, NewTag}
+import io.shiftleft.codepropertygraph.generated.EdgeTypes
 import io.shiftleft.semanticcpg.language._
 import io.shiftleft.utils.IOUtils
 import org.slf4j.LoggerFactory
-import overflowdb.BatchedUpdate
-import overflowdb.traversal.Traversal
+import overflowdb.{BatchedUpdate, DetachedNodeData}
 
+import java.io.PrintWriter
 import java.math.BigInteger
+import java.net.URL
 import java.nio.file.Paths
 import java.security.MessageDigest
 import java.util.regex.{Pattern, PatternSyntaxException}
-import scala.collection.mutable.ListBuffer
 import scala.util.{Failure, Success, Try}
+import java.nio.file.Files
+
+import scala.Int.MaxValue
+
+object Priority extends Enumeration {
+  val MAX     = Value(3)
+  val HIGHEST = Value(2)
+  val HIGH    = Value(1)
+  val MEDIUM  = Value(0)
+  val LOW     = Value(-1)
+}
 
 object Utilities {
 
@@ -52,17 +67,39 @@ object Utilities {
 
   private val logger = LoggerFactory.getLogger(getClass)
 
+  def getEngineContext(maxCallDepthP: Int = 4, config: PrivadoInput = ScanProcessor.config)(implicit
+    semanticsP: Semantics = DefaultSemantics()
+  ): EngineContext = {
+    val expanLimit =
+      if config.limitArgExpansionDataflows > -1 then config.limitArgExpansionDataflows
+      else Constants.defaultExpansionLimit
+
+    EngineContext(
+      semantics = semanticsP,
+      config =
+        if (AppCache.repoLanguage == Language.RUBY || config.limitArgExpansionDataflows > -1) then
+          EngineConfig(maxCallDepth = maxCallDepthP, maxArgsToAllow = expanLimit, maxOutputArgsExpansion = expanLimit)
+        else EngineConfig(maxCallDepth = maxCallDepthP)
+    )
+  }
+
   /** Utility to add a single tag to a object
     */
-  def storeForTag(
-    builder: BatchedUpdate.DiffGraphBuilder,
-    node: AstNode
-  )(tagName: String, tagValue: String = ""): BatchedUpdate.DiffGraphBuilder = {
+  def storeForTag(builder: BatchedUpdate.DiffGraphBuilder, node: AstNode, ruleCache: RuleCache)(
+    tagName: String,
+    tagValue: String = ""
+  ): BatchedUpdate.DiffGraphBuilder = {
     val fileName = getFileNameForNode(node)
-    if (isFileProcessable(fileName)) {
+    if (isFileProcessable(fileName, ruleCache)) {
       builder.addEdge(node, NewTag().name(tagName).value(tagValue), EdgeTypes.TAGGED_BY)
     }
     builder
+  }
+
+  def createCpgFolder(sourceRepoLocation: String): Unit = {
+    if (!Files.exists(Paths.get(s"$sourceRepoLocation/$outputDirectoryName"))) {
+      Files.createDirectory(Paths.get(s"$sourceRepoLocation/$outputDirectoryName"));
+    }
   }
 
   /** Utility to add database detail tags to sink
@@ -70,9 +107,11 @@ object Utilities {
   def addDatabaseDetailTags(
     builder: BatchedUpdate.DiffGraphBuilder,
     node: CfgNode,
-    databaseDetails: DatabaseDetails
+    databaseDetails: DatabaseDetails,
+    ruleCache: RuleCache
   ): Unit = {
-    val storeForTagHelper = storeForTag(builder, node) _
+
+    val storeForTagHelper = storeForTag(builder, node, ruleCache) _
     storeForTagHelper(Constants.dbName, databaseDetails.dbName)
     storeForTagHelper(Constants.dbVendor, databaseDetails.dbVendor)
     storeForTagHelper(Constants.dbLocation, databaseDetails.dbLocation)
@@ -81,98 +120,29 @@ object Utilities {
 
   /** Utility to add Tag based on a rule Object
     */
-  def addRuleTags(builder: BatchedUpdate.DiffGraphBuilder, node: AstNode, ruleInfo: RuleInfo): Unit = {
+  def addRuleTags(
+    builder: BatchedUpdate.DiffGraphBuilder,
+    node: AstNode,
+    ruleInfo: RuleInfo,
+    ruleCache: RuleCache,
+    ruleId: Option[String] = None
+  ): Unit = {
     val fileName = getFileNameForNode(node)
-    if (isFileProcessable(fileName)) {
-      val storeForTagHelper = storeForTag(builder, node) _
-      storeForTagHelper(Constants.id, ruleInfo.id)
+    if (isFileProcessable(fileName, ruleCache)) {
+      val storeForTagHelper = storeForTag(builder, node, ruleCache) _
+      storeForTagHelper(Constants.id, ruleId.getOrElse(ruleInfo.id))
       storeForTagHelper(Constants.nodeType, ruleInfo.nodeType.toString)
       storeForTagHelper(Constants.catLevelOne, ruleInfo.catLevelOne.name)
       storeForTagHelper(Constants.catLevelTwo, ruleInfo.catLevelTwo)
 
       MetricHandler.totalRulesMatched.addOne(ruleInfo.id)
-      RuleCache.internalRules.get(ruleInfo.id) match {
+      ruleCache.internalRules.get(ruleInfo.id) match {
         case Some(_) => MetricHandler.internalRulesMatched.addOne(ruleInfo.id)
         case _       => ()
       }
       // storing by catLevelTwo and nodeType to get id
-      storeForTagHelper(ruleInfo.catLevelTwo + ruleInfo.nodeType.toString, ruleInfo.id)
+      storeForTagHelper(ruleInfo.catLevelTwo + ruleInfo.nodeType.toString, ruleId.getOrElse(ruleInfo.id))
     }
-  }
-
-  /** Utility to get the default semantics for dataflow queries
-    * @return
-    */
-  def getDefaultSemantics: Semantics = {
-    DefaultSemantics()
-  }
-
-  /** Utility to get the semantics (default + custom) using cpg for dataflow queries
-    *
-    * @param cpg
-    *   \- cpg for adding customSemantics
-    * @return
-    */
-  def getSemantics(cpg: Cpg): Semantics = {
-    val customSinkSemantics = cpg.call
-      .where(_.tag.nameExact(Constants.catLevelOne).valueExact(CatLevelOne.SINKS.name))
-      .methodFullName
-      .dedup
-      .l
-      .map(generateSemanticForTaint(_, -1))
-
-    val nonTaintingMethods = cpg.method.where(_.callIn).isExternal(true).fullName(".*:(void|boolean|long|int)\\(.*").l
-
-    var customNonTaintDefaultSemantics   = List[String]()
-    var specialNonTaintDefaultSemantics  = List[String]()
-    var customStringSemantics            = List[String]()
-    var customNonPersonalMemberSemantics = List[String]()
-
-    if (!ScanProcessor.config.disableRunTimeSemantics) {
-      customNonTaintDefaultSemantics = nonTaintingMethods
-        .fullNameNot(".*\\.(add|put|<init>|set|get|append|store|insert|update|merge).*")
-        .fullName
-        .l
-        .map(generateNonTaintSemantic)
-
-      specialNonTaintDefaultSemantics = nonTaintingMethods
-        .fullName(".*\\.(add|put|set|get|append|store|insert|update|merge).*")
-        .fullName
-        .l
-        .map(generateSemanticForTaint(_, 0))
-
-      customStringSemantics = cpg.method
-        .filter(_.isExternal)
-        .where(_.callIn)
-        .fullName(".*:java.lang.String\\(.*")
-        .fullNameNot(".*\\.set[A-Za-z_]*:.*")
-        .fullName
-        .dedup
-        .l
-        .map(generateSemanticForTaint(_, -1))
-
-      customNonPersonalMemberSemantics = generateNonPersonalMemberSemantics(cpg)
-    }
-    val semanticFromConfig = RuleCache.getRule.semantics.flatMap(generateSemantic)
-
-    logger.debug("\nCustom Non taint default semantics")
-    customNonTaintDefaultSemantics.foreach(logger.debug)
-    logger.debug("\nCustom specialNonTaintDefaultSemantics semantics")
-    specialNonTaintDefaultSemantics.foreach(logger.debug)
-    logger.debug("\nCustom customStringSemantics semantics")
-    customStringSemantics.foreach(logger.debug)
-    logger.debug("\nCustom customNonPersonalMemberSemantics semantics")
-    customNonPersonalMemberSemantics.foreach(logger.debug)
-    logger.debug("\nCustom customSinkSemantics semantics")
-    customSinkSemantics.foreach(logger.debug)
-    logger.debug("\nCustom semanticFromConfig semantics")
-    semanticFromConfig.foreach(logger.debug)
-
-    val list =
-      customNonTaintDefaultSemantics ++ specialNonTaintDefaultSemantics ++ customStringSemantics ++ customNonPersonalMemberSemantics ++ customSinkSemantics ++ semanticFromConfig
-    val parsed         = new Parser().parse(list.mkString("\n"))
-    val finalSemantics = getDefaultSemantics.elements ++ parsed
-    Semantics.fromList(finalSemantics)
   }
 
   /** Utility to filter rules by catLevelOne
@@ -184,20 +154,26 @@ object Utilities {
     * `lineToHighlight` is defined, then a line containing an arrow (as a source code comment) is included right before
     * that line.
     */
-  def dump(filename: String, lineToHighlight: Option[Integer], message: String = ""): String = {
+  def dump(
+    filename: String,
+    lineToHighlight: Option[Integer],
+    message: String = "",
+    excerptStartLine: Int = -5,
+    excerptEndLine: Int = 5
+  ): String = {
     val arrow: CharSequence = "/* <=== " + message + " */ "
     try {
       if (!filename.equals("<empty>")) {
         val lines = IOUtils.readLinesInFile(Paths.get(filename))
         val startLine: Integer = {
           if (lineToHighlight.isDefined)
-            Math.max(1, lineToHighlight.get - 5)
+            Math.max(1, lineToHighlight.get + excerptStartLine)
           else
             0
         }
         val endLine: Integer = {
           if (lineToHighlight.isDefined)
-            Math.min(lines.length, lineToHighlight.get + 5)
+            Math.min(lines.length, lineToHighlight.get + excerptEndLine)
           else
             0
         }
@@ -212,8 +188,7 @@ object Utilities {
             }
           }
           .mkString("\n")
-      } else
-        ""
+      } else ""
     } catch {
       case e: Exception =>
         logger.debug("Error : ", e)
@@ -253,8 +228,8 @@ object Utilities {
     * @param filePath
     * @return
     */
-  def isFileProcessable(filePath: String): Boolean = {
-    RuleCache.getRule.exclusions
+  def isFileProcessable(filePath: String, ruleCache: RuleCache): Boolean = {
+    ruleCache.getRule.exclusions
       .flatMap(exclusionRule => {
         Try(!filePath.matches(exclusionRule.combinedRulePattern)) match {
           case Success(result) => Some(result)
@@ -269,8 +244,8 @@ object Utilities {
     * @param sinkName
     * @return
     */
-  def isPrivacySink(sinkName: String): Boolean = {
-    RuleCache.getRule.sinkSkipList
+  def isPrivacySink(sinkName: String, ruleCache: RuleCache): Boolean = {
+    ruleCache.getRule.sinkSkipList
       .flatMap(sinkSkipRule => {
         Try(!sinkName.matches(sinkSkipRule.combinedRulePattern)) match {
           case Success(result) => Some(result)
@@ -285,10 +260,14 @@ object Utilities {
     * @param extension
     * @return
     */
-  def getAllFilesRecursively(folderPath: String, extensions: Set[String]): Option[List[String]] = {
+  def getAllFilesRecursively(
+    folderPath: String,
+    extensions: Set[String],
+    ruleCache: RuleCache
+  ): Option[List[String]] = {
     try {
       if (File(folderPath).isDirectory)
-        Some(SourceFiles.determine(Set(folderPath), extensions).filter(isFileProcessable))
+        Some(SourceFiles.determine(Set(folderPath), extensions).filter(isFileProcessable(_, ruleCache)))
       else
         None
     } catch {
@@ -299,6 +278,35 @@ object Utilities {
 
   }
 
+  /** Returns all files matching the fileName
+    *
+    * @param folderPath
+    * @param fileName
+    * @return
+    */
+  def getAllFilesRecursivelyWithoutExtension(folderPath: String, fileName: String): Option[List[String]] = {
+    try {
+      val dir = File(folderPath)
+      if (dir.isDirectory) {
+        val matchingFiles = dir.glob(s"**/$fileName").toList.map(_.pathAsString)
+        val subdirectoryFiles = dir.listRecursively
+          .filter(_.isDirectory)
+          .flatMap(subdir => subdir.glob(fileName).toList.map(_.pathAsString))
+          .toList
+        val topLevelFile = dir / fileName
+        val topLevelFilePath =
+          if (topLevelFile.exists && topLevelFile.isRegularFile) Some(topLevelFile.pathAsString) else None
+        Some(matchingFiles ++ topLevelFilePath ++ subdirectoryFiles)
+      } else {
+        None
+      }
+    } catch {
+      case e: Exception =>
+        logger.debug("Exception ", e)
+        None
+    }
+  }
+
   /** Returns the SHA256 hash for a given string.
     * @param value
     * @return
@@ -306,38 +314,6 @@ object Utilities {
     */
   def getSHA256Hash(value: String): String =
     String.format("%032x", new BigInteger(1, MessageDigest.getInstance("SHA-256").digest(value.getBytes("UTF-8"))))
-
-  /** Generate semantics for tainting passed argument based on the number of parameter in method signature
-    * @param methodName
-    *   \- complete signature of method
-    * @return
-    *   \- semantic string
-    */
-  private def generateSemanticForTaint(methodName: String, toTaint: Int) = {
-    var parameterSemantics = ""
-    var parameterNumber    = 2
-    if (methodName.matches(".*:<unresolvedSignature>\\(\\d+\\).*")) {
-      parameterNumber = 7
-    } else {
-      parameterNumber = methodName.count(_.equals(','))
-    }
-    for (i <- 0 to (parameterNumber + 1))
-      parameterSemantics += s"$i->$toTaint "
-    "\"" + methodName + "\" " + parameterSemantics.trim
-  }
-
-  /** Generate Semantic string based on input Semantic
-    * @param semantic
-    *   \- semantic object containing semantic information
-    * @return
-    */
-  private def generateSemantic(semantic: Semantic) = {
-    if (semantic.signature.nonEmpty) {
-      val generatedSemantic = "\"" + semantic.signature.trim + "\" " + semantic.flow
-      Some(generatedSemantic.trim)
-    } else
-      None
-  }
 
   /** Returns only rules which belong to the correponding passed language along with Default and Unknown
     * @param rules
@@ -359,6 +335,7 @@ object Utilities {
     val semantics    = rules.semantics.filter(getSemanticRuleByLang)
     val sinkSkipList = rules.sinkSkipList.filter(getRuleByLang)
     val systemConfig = rules.systemConfig.filter(getSystemConfigByLang)
+    val auditConfig  = rules.auditConfig.filter(getRuleByLang)
 
     ConfigAndRules(
       sources,
@@ -369,7 +346,8 @@ object Utilities {
       exclusions,
       semantics,
       sinkSkipList,
-      systemConfig
+      systemConfig,
+      auditConfig
     )
   }
 
@@ -378,48 +356,162 @@ object Utilities {
     * @return
     */
   def getFileNameForNode(node: AstNode): String = {
-    Traversal(node).file.name.headOption.getOrElse(Constants.EMPTY)
+    Iterator(node).file.name.headOption.getOrElse(Constants.EMPTY)
   }
 
-  /** Returns the Semantics for functions with void return type Default behavior is not propagating the taint
-    * @param String
-    *   methodFullName
+  /** Returns a domain for a given url string
+    * @param urlString
     * @return
-    *   String
     */
-  private def generateNonTaintSemantic(methodFullName: String): String = {
-    "\"" + methodFullName + "\" "
+  def getDomainFromString(urlString: String) = {
+    try {
+      val cleanedUrlString = urlString.replaceAll("'", "").replaceAll("\"", "")
+      val prefixToReplace  = if (cleanedUrlString.contains("http://")) "http://" else "https://"
+      val url              = new URL("https://" + cleanedUrlString.replaceAll(prefixToReplace, "").trim)
+      url.getHost.replaceAll("www.", "").replaceAll("\"", "")
+    } catch {
+      case e: Exception =>
+        logger.debug("Exception while getting domain from string : ", e)
+        urlString
+    }
+
   }
 
-  /** Generates Semantics for non Personal member
-    * @param cpg
+  /** Get the domains from complete script tag <Script id="googletag-script" data-testid="googletag-script"
+    * src="https://www.googletagservices.com/tag/js/gpt.js" strategy="lazyOnload" />
+    *
+    * @param templateStr
     * @return
-    *   non-tainting semantic rule
     */
-  def generateNonPersonalMemberSemantics(cpg: Cpg): List[String] = {
+  def getDomainFromTemplates(templateStr: String): (String, String) = {
+    val regex =
+      """(http:|https:){0,1}\/\/(www.){0,1}([\w_\-]+(?:(?:\.[\w_\-]+)+))([\w.,@?^=%&:\/~+#\-]*[\w@?^=%&\/~+#\-])""".r
+    Try(regex.findFirstMatchIn(templateStr).headOption.get) match {
+      case Success(matched) =>
+        (matched.matched, matched.group(3))
+      case Failure(e) =>
+        logger.debug("Exception : ", e)
+        ("unknown-domain", "unknown-domain")
+    }
+  }
 
-    val semanticList = ListBuffer[String]()
+  /** Get list of source files with given file extensions
+    *
+    * @param projectRoot
+    * @param extensions
+    * @param ruleCache
+    * @return
+    */
+  def getSourceFilesWithGivenExtension(
+    projectRoot: String,
+    extensions: Set[String],
+    ruleCache: RuleCache
+  ): List[String] = {
+    SourceFiles
+      .determine(Set(projectRoot), extensions)
+      .filter(Utilities.isFileProcessable(_, ruleCache))
+  }
 
-    TaggerCache.typeDeclMemberCache.keys.foreach(typeDeclValue => {
-      val typeDeclNode       = cpg.typeDecl.where(_.fullName(typeDeclValue)).l
-      val allMembers         = typeDeclNode.member.name.toSet
-      val personalMembers    = TaggerCache.typeDeclMemberCache(typeDeclValue).values.name.toSet
-      val nonPersonalMembers = allMembers.diff(personalMembers)
+  /** Add new file node into CPG / Diff Graph
+    * @param fileName
+    * @param builder
+    * @return
+    */
+  def addFileNode(fileName: String, builder: BatchedUpdate.DiffGraphBuilder): NewFile = {
+    val fileNode = NewFile().name(fileName)
+    builder.addNode(fileNode)
+    fileNode
+  }
 
-      val nonPersonalMembersRegex = nonPersonalMembers.mkString("|")
-      if (nonPersonalMembersRegex.nonEmpty) {
-        typeDeclNode.method.block.astChildren.isReturn
-          .code("(?i).*(" + nonPersonalMembersRegex + ").*")
-          .method
-          .callIn
-          .whereNot(_.tag.nameExact(InternalTag.SENSITIVE_METHOD_RETURN.toString))
-          .methodFullName
-          .dedup
-          .foreach(methodName => {
-            semanticList.addOne(generateNonTaintSemantic(methodName))
-          })
+  /** Add new node to Diff graph builder as well as establish the edge between new node and file node.
+    *
+    * @param builder
+    * @param node
+    * @param fileNode
+    */
+  def addNodeWithFileEdge(builder: BatchedUpdate.DiffGraphBuilder, node: DetachedNodeData, fileNode: NewFile): Unit = {
+    builder.addNode(node)
+    builder.addEdge(node, fileNode, EdgeTypes.SOURCE_FILE)
+  }
+
+  def semanticFileExporter(sourceRepoLocation: String, headerAndSemanticPairs: Map[String, Seq[String]]): Unit = {
+    if (headerAndSemanticPairs.keys.toList.length != headerAndSemanticPairs.values.toList.length) {
+      logger.debug(
+        "Semantic Exporter failed: Headers and semantics mismatch, please provide matching number of headers and semantics."
+      )
+      return;
+    }
+
+    var runTimeSemanticsString: String = ""
+    for ((header, semantics) <- headerAndSemanticPairs) {
+      runTimeSemanticsString += header + "\n"
+      for (semantic <- semantics) {
+        runTimeSemanticsString += semantic + "\n"
+      }
+      runTimeSemanticsString += "------------------------------------------\n"
+    }
+
+    try {
+      new PrintWriter(s"${sourceRepoLocation}/$outputDirectoryName/${Constants.outputSemanticFileName}") {
+        write(runTimeSemanticsString)
+        close()
+      }
+    } catch {
+      case e: Throwable => logger.debug(e.getMessage)
+    }
+
+  }
+
+  def databaseURLPriority(url: String, file: String): Priority.Value = {
+    val ipPortRegex =
+      "^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}:[0-9]{1,4})(:[0-9]{1,4})?$" // For database urls which contain an IP address
+    val cloudDomainRegex =
+      ".*(amazonaws\\.com|orcalecloud\\.com|azure\\.com|mongodb\\.net).*" // For cloud domains
+
+    val cloudDomainRegexProd = ".*(prd|prod).*(amazonaws\\.com|orcalecloud\\.com|azure\\.com|mongodb\\.net).*"
+
+    val prodFileRegex = ".*(prd|prod).*\\.(properties|yaml|yml|xml|conf)$"
+
+    // Priority - URLs in Prod files > PROD URLS w/ cloud > Cloud URLS > IP Urls > localhost or test urls
+    if (file.matches(prodFileRegex)) Priority.MAX
+    else if (url.matches(cloudDomainRegexProd)) Priority.HIGHEST
+    else if (url.matches(cloudDomainRegex)) Priority.HIGH
+    else if (url.matches(ipPortRegex)) Priority.MEDIUM
+    else Priority.LOW
+  }
+
+  def addDatabaseDetailsMultiple(
+    rules: List[(String, String)],
+    dbUrl: JavaProperty,
+    dbName: String,
+    dbLocation: String,
+    dbVendor: String
+  ): Unit = {
+    rules.foreach(rule => {
+      if (DatabaseDetailsCache.getDatabaseDetails(rule._2).isDefined) {
+        val fileName = dbUrl.file.name.headOption.getOrElse("")
+        if (
+          databaseURLPriority(
+            DatabaseDetailsCache.getDatabaseDetails(rule._1).get.dbLocation,
+            DatabaseDetailsCache.getDatabaseDetails(rule._1).get.configFile
+          ) < databaseURLPriority(
+            dbUrl.value,
+            fileName
+          ) // Compare the priority of the database url with already present url in the database cache
+        ) {
+
+          DatabaseDetailsCache.removeDatabaseDetails(rule._2)
+          DatabaseDetailsCache.addDatabaseDetails(
+            DatabaseDetails(dbName, dbVendor, dbLocation, rule._1, fileName),
+            rule._2
+          ) // Remove if current url has higher priority
+        }
+      } else {
+        DatabaseDetailsCache.addDatabaseDetails(
+          DatabaseDetails(dbName, dbVendor, dbLocation, rule._1, dbUrl.sourceFileOut.head.name),
+          rule._2
+        )
       }
     })
-    semanticList.toList
   }
 }

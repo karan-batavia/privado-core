@@ -27,8 +27,6 @@ import io.circe.{Decoder, HCursor}
 
 import scala.collection.immutable.HashMap
 
-case class DatabaseDetails(dbName: String, dbVendor: String, dbLocation: String, dbOperation: String)
-
 case class RuleInfo(
   id: String,
   name: String,
@@ -58,10 +56,13 @@ case class ConfigAndRules(
   exclusions: List[RuleInfo],
   semantics: List[Semantic],
   sinkSkipList: List[RuleInfo],
-  systemConfig: List[SystemConfig]
+  systemConfig: List[SystemConfig],
+  auditConfig: List[RuleInfo]
 )
 
-case class DataFlow(sources: List[String], sinks: List[String])
+case class SourceFilter(isSensitive: Option[Boolean], sensitivity: String)
+
+case class DataFlow(sources: List[String], sourceFilters: SourceFilter, sinks: List[String])
 
 case class PolicyOrThreat(
   id: String,
@@ -73,6 +74,7 @@ case class PolicyOrThreat(
   dataFlow: DataFlow,
   repositories: List[String],
   tags: Map[String, String],
+  config: Map[String, String],
   file: String,
   categoryTree: Array[String]
 )
@@ -106,6 +108,7 @@ object CirceEnDe {
       val dataFlow           = c.downField(Constants.dataFlow).as[DataFlow]
       val repositories       = c.downField(Constants.repositories).as[List[String]]
       val tags               = c.downField(Constants.tags).as[Map[String, String]]
+      val config             = c.downField(Constants.config).as[Map[String, String]]
       Right(
         PolicyOrThreat(
           id = id.getOrElse(""),
@@ -114,9 +117,10 @@ object CirceEnDe {
           policyOrThreatType = PolicyThreatType.withNameDefaultHandler(policyOrThreatType.getOrElse("")),
           description = description.getOrElse(""),
           action = PolicyAction.withNameDefaultHandler(action.getOrElse("")),
-          dataFlow = dataFlow.getOrElse(DataFlow(List[String](), List[String]())),
+          dataFlow = dataFlow.getOrElse(DataFlow(List[String](), SourceFilter(None, ""), List[String]())),
           repositories = repositories.getOrElse(List[String]()),
           tags = tags.getOrElse(HashMap[String, String]()),
+          config = config.getOrElse(HashMap[String, String]()),
           file = "",
           categoryTree = Array[String]()
         )
@@ -124,11 +128,29 @@ object CirceEnDe {
     }
   }
 
+  implicit val decodeSourceFilter: Decoder[SourceFilter] = new Decoder[SourceFilter] {
+    override def apply(c: HCursor): Result[SourceFilter] = {
+      Right(
+        SourceFilter(
+          isSensitive = c.downField(Constants.isSensitive).as[Option[Boolean]].getOrElse(None),
+          sensitivity = c.downField(Constants.sensitivity).as[String].getOrElse("")
+        )
+      )
+    }
+  }
+
   implicit val decodeDataFlow: Decoder[DataFlow] = new Decoder[DataFlow] {
     override def apply(c: HCursor): Result[DataFlow] = {
-      val sources = c.downField(Constants.sources).as[List[String]]
-      val sinks   = c.downField(Constants.sinks).as[List[String]]
-      Right(DataFlow(sources = sources.getOrElse(List[String]()), sinks = sinks.getOrElse(List[String]())))
+      val sources      = c.downField(Constants.sources).as[List[String]]
+      val sourceFilter = c.downField(Constants.sourceFilters).as[SourceFilter]
+      val sinks        = c.downField(Constants.sinks).as[List[String]]
+      Right(
+        DataFlow(
+          sources = sources.getOrElse(List[String]()),
+          sourceFilters = sourceFilter.getOrElse(SourceFilter(None, "")),
+          sinks = sinks.getOrElse(List[String]())
+        )
+      )
     }
   }
 
@@ -175,6 +197,7 @@ object CirceEnDe {
       val semantics    = c.downField(Constants.semantics).as[List[Semantic]]
       val sinkSkipList = c.downField(Constants.sinkSkipList).as[List[RuleInfo]]
       val systemConfig = c.downField(Constants.systemConfig).as[List[SystemConfig]]
+      val auditConfig  = c.downField(Constants.auditConfig).as[List[RuleInfo]]
       Right(
         ConfigAndRules(
           sources = sources.getOrElse(List[RuleInfo]()),
@@ -185,7 +208,8 @@ object CirceEnDe {
           threats = threats.getOrElse(List[PolicyOrThreat]()),
           semantics = semantics.getOrElse(List[Semantic]()),
           sinkSkipList = sinkSkipList.getOrElse(List[RuleInfo]()),
-          systemConfig = systemConfig.getOrElse(List[SystemConfig]())
+          systemConfig = systemConfig.getOrElse(List[SystemConfig]()),
+          auditConfig = auditConfig.getOrElse(List[RuleInfo]())
         )
       )
     }

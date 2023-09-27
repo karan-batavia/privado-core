@@ -23,32 +23,21 @@
 
 package ai.privado.exporter
 
-import ai.privado.cache.{AppCache, DataFlowCache, Environment, RuleCache}
-import ai.privado.entrypoint.ScanProcessor
+import ai.privado.audit.AuditReportEntryPoint.DataElementDiscoveryAudit
+import ai.privado.cache.{AppCache, DataFlowCache, Environment, RuleCache, TaggerCache}
 import ai.privado.metric.MetricHandler
-import ai.privado.model.Constants.{outputDirectoryName, sinkProcessing}
-import ai.privado.model.exporter.{
-  DataFlowSubCategoryModel,
-  SinkModel,
-  SinkProcessingModel,
-  SourceModel,
-  SourceProcessingModel
-}
-import ai.privado.model.{Constants, InternalTag, PolicyThreatType}
-import ai.privado.model.Constants.outputDirectoryName
-import ai.privado.model.exporter.{
-  DataFlowPathIntermediateModel,
-  DataFlowSourceIntermediateModel,
-  DataFlowSubCategoryModel,
-  DataFlowSubCategoryPathExcerptModel
-}
-import ai.privado.model.{Constants, DataFlowPathModel, InternalTag, PolicyThreatType}
-import ai.privado.model.exporter.SourceEncoderDecoder._
-import ai.privado.model.exporter.DataFlowEncoderDecoder._
-import ai.privado.model.exporter.ViolationEncoderDecoder._
-import ai.privado.model.exporter.CollectionEncoderDecoder._
-import ai.privado.model.exporter.SinkEncoderDecoder._
+import ai.privado.model.Constants.{outputDirectoryName, value}
+import ai.privado.model.exporter.DataFlowSubCategoryModel
+import ai.privado.model.{Constants, PolicyThreatType}
+import ai.privado.model.exporter.DataFlowSourceIntermediateModel
+import ai.privado.model.exporter.SourceEncoderDecoder.*
+import ai.privado.model.exporter.DataFlowEncoderDecoder.*
+import ai.privado.model.exporter.ViolationEncoderDecoder.*
+import ai.privado.model.exporter.CollectionEncoderDecoder.*
+import ai.privado.model.exporter.SinkEncoderDecoder.*
+import ai.privado.script.ExternalScalaScriptRunner
 import better.files.File
+import privado_core.BuildInfo
 import io.circe.Json
 import io.circe.syntax.EncoderOps
 import io.joern.dataflowengineoss.language.Path
@@ -59,11 +48,12 @@ import org.slf4j.LoggerFactory
 import java.math.BigInteger
 import java.util.Calendar
 import scala.collection.mutable
-import scala.concurrent._
+import scala.concurrent.*
 import ExecutionContext.Implicits.global
-import duration._
+import duration.*
 import scala.language.postfixOps
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
+import io.shiftleft.semanticcpg.language.*
 
 object JSONExporter {
 
@@ -73,107 +63,63 @@ object JSONExporter {
     cpg: Cpg,
     outputFileName: String,
     repoPath: String,
-    dataflows: Map[String, Path]
+    dataflows: Map[String, Path],
+    ruleCache: RuleCache,
+    taggerCache: TaggerCache = new TaggerCache()
   ): Either[String, Unit] = {
     logger.info("Initiated exporter engine")
-    val sourceExporter          = new SourceExporter(cpg)
-    val sinkExporter            = new SinkExporter(cpg)
-    val dataflowExporter        = new DataflowExporter(cpg, dataflows)
-    val collectionExporter      = new CollectionExporter(cpg)
-    val policyAndThreatExporter = new PolicyAndThreatExporter(cpg, dataflows)
+    val sourceExporter          = new SourceExporter(cpg, ruleCache)
+    val sinkExporter            = new SinkExporter(cpg, ruleCache)
+    val dataflowExporter        = new DataflowExporter(cpg, dataflows, taggerCache)
+    val collectionExporter      = new CollectionExporter(cpg, ruleCache)
+    val probableSinkExporter    = new ProbableSinkExporter(cpg, ruleCache, repoPath)
+    val policyAndThreatExporter = new PolicyAndThreatExporter(cpg, ruleCache, dataflows, taggerCache)
     val output                  = mutable.LinkedHashMap[String, Json]()
     try {
-      output.addOne(Constants.coreVersion   -> Environment.privadoVersionCore.asJson)
-      output.addOne(Constants.cliVersion    -> Environment.privadoVersionCli.getOrElse(Constants.notDetected).asJson)
-      output.addOne(Constants.mainVersion   -> AppCache.privadoVersionMain.asJson)
-      output.addOne(Constants.createdAt     -> Calendar.getInstance().getTimeInMillis.asJson)
-      output.addOne(Constants.repoName      -> AppCache.repoName.asJson)
-      output.addOne(Constants.gitMetadata   -> GitMetaDataExporter.getMetaData(repoPath).asJson)
-      output.addOne(Constants.localScanPath -> AppCache.localScanPath.asJson)
-      val sources = Future(
-        sourceExporter.getSources
-      ) // Future creates a thread and starts resolving the function call asynchronously
-      val processing      = Future(sourceExporter.getProcessing)
-      val sinks           = Future(sinkExporter.getSinks)
-      val processingSinks = Future(sinkExporter.getProcessing)
-      val probableSinks   = Future(sinkExporter.getProbableSinks)
-      val collections     = Future(collectionExporter.getCollections)
-      val violations      = Future(policyAndThreatExporter.getViolations(repoPath))
 
-      // Called when the asynchronous call is completed
-      sources.onComplete({
-        case Success(value) => {
-          output.addOne(Constants.sources -> value.asJson)
-          logger.info("Completed sources export.")
-        }
-        case Failure(e) => {
-          println(e)
-        }
-      })
+      output.addOne(Constants.coreVersion -> Environment.privadoVersionCore.asJson)
+      output.addOne(Constants.cliVersion  -> Environment.privadoVersionCli.getOrElse(Constants.notDetected).asJson)
+      output.addOne(Constants.mainVersion -> AppCache.privadoVersionMain.asJson)
+      output.addOne(Constants.privadoLanguageEngineVersion -> BuildInfo.joernVersion.asJson)
+      output.addOne(Constants.createdAt                    -> Calendar.getInstance().getTimeInMillis.asJson)
+      output.addOne(Constants.repoName                     -> AppCache.repoName.asJson)
+      output.addOne(Constants.language                     -> AppCache.repoLanguage.toString.asJson)
+      output.addOne(Constants.gitMetadata                  -> GitMetaDataExporter.getMetaData(repoPath).asJson)
+      output.addOne(Constants.localScanPath                -> AppCache.localScanPath.asJson)
+      output.addOne(Constants.probableSinks                -> probableSinkExporter.getProbableSinks.asJson)
 
-      sinks.onComplete({
-        case Success(value) => {
-          output.addOne(Constants.sinks -> value.asJson)
-          logger.info("Completed sinks export.")
-        }
-        case Failure(e) => {
-          println(e)
-        }
-      })
+      // Future creates a thread and starts resolving the function call asynchronously
+      val sources = Future {
+        val _sources = Try(sourceExporter.getSources).getOrElse(List())
+        output.addOne(Constants.sources -> _sources.asJson)
+        _sources
+      }
+      val processing = Future {
+        val _processing = Try(sourceExporter.getProcessing).getOrElse(List())
+        output.addOne(Constants.processing -> _processing.asJson)
+        _processing
+      }
+      val sinks = Future {
+        val _sinks = Try(sinkExporter.getSinks).getOrElse(List())
+        output.addOne(Constants.sinks -> _sinks.asJson)
+        _sinks
+      }
+      val processingSinks = Future {
+        val _processingSinks = Try(sinkExporter.getProcessing).getOrElse(List())
+        output.addOne(Constants.sinkProcessing -> _processingSinks.asJson)
+        _processingSinks
+      }
+      val collections = Future {
+        val _collections = Try(collectionExporter.getCollections).getOrElse(List())
+        output.addOne(Constants.collections -> _collections.asJson)
+        _collections
+      }
 
-      processing.onComplete({
-        case Success(value) => {
-          output.addOne(Constants.processing -> value.asJson)
-          logger.info("Completed processing export.")
-
-        }
-        case Failure(e) => {
-          println(e)
-        }
-      })
-
-      collections.onComplete({
-        case Success(value) => {
-          output.addOne(Constants.collections -> value.asJson)
-          logger.info("Completed collections export.")
-        }
-        case Failure(e) => {
-          println(e)
-        }
-      })
-
-      probableSinks.onComplete({
-        case Success(value) => {
-          output.addOne(Constants.probableSinks -> value.asJson)
-          logger.info("Completed probable sinks export.")
-        }
-        case Failure(e) => {
-          println(e)
-        }
-      })
-
-      processingSinks.onComplete({
-        case Success(value) => {
-          output.addOne(Constants.sinkProcessing -> value.asJson)
-          logger.info("Completed sinks export.")
-        }
-        case Failure(e) => {
-          println(e)
-        }
-      })
-
-      violations.onComplete({
-        case Success(value) => {
-          output.addOne("violations" -> value.asJson)
-          logger.info("Completed violation export.")
-        }
-        case Failure(e) => {
-          println(e)
-        }
-      })
+      val violationResult = Try(policyAndThreatExporter.getViolations(repoPath)).getOrElse(List())
+      output.addOne(Constants.violations -> violationResult.asJson)
 
       val sinkSubCategories = mutable.HashMap[String, mutable.Set[String]]()
-      RuleCache.getRule.sinks.foreach(sinkRule => {
+      ruleCache.getRule.sinks.foreach(sinkRule => {
         if (!sinkSubCategories.contains(sinkRule.catLevelTwo))
           sinkSubCategories.addOne(sinkRule.catLevelTwo -> mutable.Set())
         sinkSubCategories(sinkRule.catLevelTwo).add(sinkRule.nodeType.toString)
@@ -182,7 +128,9 @@ object JSONExporter {
       val dataflowsOutput = mutable.LinkedHashMap[String, List[DataFlowSubCategoryModel]]()
       sinkSubCategories.foreach(sinkSubTypeEntry => {
         dataflowsOutput.addOne(
-          sinkSubTypeEntry._1 -> dataflowExporter.getFlowByType(sinkSubTypeEntry._1, sinkSubTypeEntry._2.toSet).toList
+          sinkSubTypeEntry._1 -> dataflowExporter
+            .getFlowByType(sinkSubTypeEntry._1, sinkSubTypeEntry._2.toSet, ruleCache)
+            .toList
         )
       })
 
@@ -190,8 +138,6 @@ object JSONExporter {
       logger.info("Completed Sink Exporting")
 
       logger.info("Completed Collections Exporting")
-
-      val violationResult = Await.result(violations, 10 seconds);
 
       MetricHandler.metricsData("policyViolations") = violationResult.size.asJson
       violationResult.foreach(violation => {
@@ -205,18 +151,16 @@ object JSONExporter {
           case None               => false
         }
       )
-      logger.debug("------------ Sink Skip List ---------------")
-      val skipRules = RuleCache.getRule.sinkSkipList.map(sinkSkipRule => sinkSkipRule.combinedRulePattern)
-      logger.debug(s"$skipRules")
-      logger.debug("------------ Probable Sink Dependencies ---------------")
-      logger.debug(s"$probableSinks")
+
+      // We need to wait till this get completed before moving ahead to export the result
+      Await.result(processingSinks, Duration.Inf)
 
       ConsoleExporter.exportConsoleSummary(
         dataflowsOutput,
-        Await.result(sources, 10 seconds),
-        Await.result(sinks, 10 seconds),
-        Await.result(processing, 10 seconds),
-        Await.result(collections, 10 seconds),
+        Await.result(sources, Duration.Inf),
+        Await.result(sinks, Duration.Inf),
+        Await.result(processing, Duration.Inf),
+        Await.result(collections, Duration.Inf),
         complianceViolations.size
       )
 
@@ -233,6 +177,11 @@ object JSONExporter {
       logger.info("Completed exporting policy violations")
       val outputDirectory = File(s"$repoPath/$outputDirectoryName").createDirectoryIfNotExists()
       val f               = File(s"$repoPath/$outputDirectoryName/$outputFileName")
+
+      // Post export Trigger
+      ExternalScalaScriptRunner
+        .postExportTrigger(cpg, ruleCache, output)
+
       f.write(output.asJson.toString())
       logger.info("Shutting down Exporter engine")
       logger.info("Scanning Completed...")
@@ -262,7 +211,7 @@ object JSONExporter {
     repoPath: String,
     dataflows: List[DataFlowSourceIntermediateModel]
   ): Either[String, Unit] = {
-    logger.info("Initialed the Intermediate exporter engine")
+    logger.info("Initiated the Intermediate exporter engine")
     val output = mutable.LinkedHashMap[String, Json]()
     try {
       output.addOne(Constants.dataFlow -> dataflows.asJson)
@@ -282,4 +231,50 @@ object JSONExporter {
     }
   }
 
+  def dataElementDiscoveryAuditFileExport(
+    outputFileName: String,
+    repoPath: String,
+    dataElementDiscoveryData: List[DataElementDiscoveryAudit]
+  ): Either[String, Unit] = {
+    logger.info("Initiated the Intermediate exporter engine")
+    val output = dataElementDiscoveryData.asJson
+    try {
+      logger.info("Completed Intermediate Data-Element Discovery Exporting")
+
+      val f = File(s"$repoPath/$outputDirectoryName/$outputFileName")
+      f.write(output.asJson.toString())
+      logger.info("Shutting down Intermediate Exporter engine")
+      Right(())
+
+    } catch {
+      case ex: Exception =>
+        println("Failed to export intermediate output")
+        logger.debug("Failed to export intermediate output", ex)
+        Left(ex.toString)
+    }
+  }
+
+  def UnresolvedFlowFileExport(
+    outputFileName: String,
+    repoPath: String,
+    dataflows: List[DataFlowSourceIntermediateModel]
+  ): Either[String, Unit] = {
+    logger.info("Initiated the Unresolved flow exporter engine")
+    val output = mutable.LinkedHashMap[String, Json]()
+    try {
+      output.addOne(Constants.dataFlow -> dataflows.asJson)
+      logger.info("Completed Unresolved Flow Exporting")
+
+      val outputDir = File(s"$repoPath/$outputDirectoryName").createDirectoryIfNotExists()
+      val f         = File(s"$repoPath/$outputDirectoryName/$outputFileName")
+      f.write(output.asJson.toString())
+      logger.info("Shutting down Unresolved flow Exporter engine")
+      Right(())
+    } catch {
+      case ex: Exception =>
+        println("Failed to export unresolved output")
+        logger.debug("Failed to export unresolved output", ex)
+        Left(ex.toString)
+    }
+  }
 }

@@ -22,39 +22,58 @@
 
 package ai.privado.cache
 
-import ai.privado.model.{ConfigAndRules, PolicyOrThreat, RuleInfo}
+import ai.privado.model.{ConfigAndRules, Constants, PolicyOrThreat, RuleInfo}
 
 import scala.collection.mutable
 
 /** Cache to store Rules specific things
   */
-object RuleCache {
 
+class RuleCache {
   private var rule: ConfigAndRules =
-    ConfigAndRules(List(), List(), List(), List(), List(), List(), List(), List(), List())
+    ConfigAndRules(List(), List(), List(), List(), List(), List(), List(), List(), List(), List())
   private val ruleInfoMap       = mutable.HashMap[String, RuleInfo]()
   private val policyOrThreatMap = mutable.HashMap[String, PolicyOrThreat]()
   val internalRules             = mutable.HashMap[String, Int]()
   val internalPolicies          = mutable.Set[String]()
+  private val storageRuleInfo   = mutable.ListBuffer[RuleInfo]()
 
   def setRule(rule: ConfigAndRules): Unit = {
     this.rule = rule
-    rule.sources.foreach(this.setRuleInfo)
-    rule.sinks.foreach(this.setRuleInfo)
-    rule.collections.foreach(this.setRuleInfo)
-    rule.policies.foreach(this.setPolicyOrThreat)
-    rule.threats.foreach(this.setPolicyOrThreat)
+    rule.sources.foreach(r => ruleInfoMap.addOne(r.id -> r))
+    rule.sinks.foreach(r => ruleInfoMap.addOne(r.id -> r))
+    rule.collections.foreach(r => ruleInfoMap.addOne(r.id -> r))
+    rule.policies.foreach(r => policyOrThreatMap.addOne(r.id -> r))
+    rule.threats.foreach(r => policyOrThreatMap.addOne(r.id -> r))
   }
 
   def getRule: ConfigAndRules = rule
 
-  def setRuleInfo(ruleInfo: RuleInfo): Unit = ruleInfoMap.addOne(ruleInfo.id -> ruleInfo)
+  def setRuleInfo(ruleInfo: RuleInfo): Unit = {
+    ruleInfoMap.addOne(ruleInfo.id -> ruleInfo)
+    rule = ruleInfo.catLevelOne match {
+      case ai.privado.model.CatLevelOne.SOURCES     => rule.copy(sources = rule.sources.appended(ruleInfo))
+      case ai.privado.model.CatLevelOne.SINKS       => rule.copy(sinks = rule.sinks.appended(ruleInfo))
+      case ai.privado.model.CatLevelOne.COLLECTIONS => rule.copy(collections = rule.collections.appended(ruleInfo))
+      case _                                        => rule
+    }
+  }
+
+  def addStorageRuleInfo(ruleInfo: RuleInfo): Unit = storageRuleInfo.addOne(ruleInfo)
+
+  def getStorageRuleInfo(): List[RuleInfo] = storageRuleInfo.toList
 
   def getRuleInfo(ruleId: String): Option[RuleInfo] = ruleInfoMap.get(ruleId)
 
   def getAllRuleInfo: Seq[RuleInfo] = ruleInfoMap.values.toList
 
-  private def setPolicyOrThreat(policy: PolicyOrThreat): Unit = policyOrThreatMap.addOne(policy.id -> policy)
+  private def setPolicyOrThreat(policy: PolicyOrThreat): Unit = {
+    policyOrThreatMap.addOne(policy.id -> policy)
+    rule = policy.policyOrThreatType match
+      case ai.privado.model.PolicyThreatType.THREAT     => rule.copy(threats = rule.threats.appended(policy))
+      case ai.privado.model.PolicyThreatType.COMPLIANCE => rule.copy(policies = rule.policies.appended(policy))
+
+  }
 
   def getPolicyOrThreat(policyId: String): Option[PolicyOrThreat] = policyOrThreatMap.get(policyId)
 
@@ -85,7 +104,24 @@ object RuleCache {
     }
   }
 
-  def getSystemConfigByKey(key: String) = {
-    rule.systemConfig.filter(config => config.key.equals(key))
+  def getSystemConfigByKey(key: String, raw: Boolean = false): String = {
+    if (rule.systemConfig.exists(config => config.key.equals(key))) {
+      val valueList = rule.systemConfig.filter(config => config.key.equals(key)).map(config => config.value)
+      if (raw)
+        valueList.mkString("")
+      else
+        valueList.mkString("(?i)(", "|", ")")
+    } else {
+      key match {
+        case Constants.ignoredSinks =>
+          "(?i).*(?<=map|list|jsonobject|json|array|arrays|jsonnode|objectmapper|objectnode).*(put:|get:).*"
+        case Constants.apiSinks =>
+          "(?i)(?:url|client|openConnection|request|execute|newCall|load|host|access|fetch|get|getInputStream|getApod|getForObject|getForEntity|list|set|put|post|proceed|trace|patch|Path|send|" +
+            "sendAsync|remove|delete|write|read|assignment|provider|exchange|postForEntity)"
+        case Constants.apiHttpLibraries =>
+          "^(?i)(org.apache.http|okhttp|org.glassfish.jersey|com.mashape.unirest|java.net.http|java.net.URL|org.springframework.(web|core.io)|groovyx.net.http|org.asynchttpclient|kong.unirest.java|org.concordion.cubano.driver.http|javax.net.ssl).*"
+        case _ => ""
+      }
+    }
   }
 }

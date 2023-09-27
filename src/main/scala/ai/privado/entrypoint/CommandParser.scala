@@ -40,13 +40,18 @@ case class PrivadoInput(
   disableThisFiltering: Boolean = false,
   disableFlowSeparationByDataElement: Boolean = false,
   disable2ndLevelClosure: Boolean = false,
+  disableReadDataflow: Boolean = false,
+  enableAPIDisplay: Boolean = false,
   ignoreExcludeRules: Boolean = false,
   ignoreSinkSkipRules: Boolean = false,
   skipUpload: Boolean = false,
   upload: Boolean = false,
-  enableJS: Boolean = false,
   testOutput: Boolean = false,
-  showUnresolvedFunctionsReport: Boolean = false
+  showUnresolvedFunctionsReport: Boolean = false,
+  generateAuditReport: Boolean = false,
+  enableAuditSemanticsFilter: Boolean = false,
+  limitNoSinksForDataflows: Int = -1,
+  limitArgExpansionDataflows: Int = -1
 )
 
 object CommandConstants {
@@ -69,6 +74,10 @@ object CommandConstants {
   val DISABLE_FLOW_SEPERATION_BY_DATA_ELEMENT_ABBR = "dfsde"
   val DISABLE_2ND_LEVEL_CLOSURE                    = "disable-2nd-level-closure"
   val DISABLE_2ND_LEVEL_CLOSURE_ABBR               = "d2lc"
+  val DISABLE_READ_DATAFLOW                        = "disable-read-dataflow"
+  val DISABLE_READ_DATAFLOW_ABBR                   = "drd"
+  val ENABLE_API_DISPLAY                           = "enable-api-display"
+  val ENABLE_API_DISPLAY_ABBR                      = "ead"
   val IGNORE_EXCLUDE_RULES                         = "ignore-exclude-rules"
   val IGNORE_EXCLUDE_RULES_ABBR                    = "ier"
   val UPLOAD                                       = "upload"
@@ -76,11 +85,18 @@ object CommandConstants {
   val SKIP_UPLOAD                                  = "skip-upload"
   val SKIP_UPLOAD_ABBR                             = "su"
   val VALIDATE                                     = "validate"
-  val ENABLE_JS                                    = "enablejs"
   val UNRESOLVED_REPORT                            = "unresolved_report"
   val UNRESOLVED_REPORT_ABBR                       = "ur"
   val TEST_OUTPUT                                  = "test-output"
   val TEST_OUTPUT_ABBR                             = "tout"
+  val GENERATE_AUDIT_REPORT                        = "generate-audit-report"
+  val GENERATE_AUDIT_REPORT_ABBR                   = "gar"
+  val ENABLE_AUDIT_SEMANTIC_FILTER                 = "enable-audit-semantic"
+  val ENABLE_AUDIT_SEMANTIC_FILTER_ABBR            = "eas"
+  val LIMIT_NO_SINKS_FOR_DATAFLOWS                 = "limit-no-sinks-for-dataflows"
+  val LIMIT_NO_SINKS_FOR_DATAFLOWS_ABBR            = "lnsfd"
+  val LIMIT_ARG_EXPANSION_FOR_DATAFLOWS            = "limit-arg-exp-for-dataflows"
+  val LIMIT_ARG_EXPANSION_FOR_DATAFLOWS_ABBR       = "laefd"
 }
 
 object CommandParser {
@@ -151,11 +167,16 @@ object CommandParser {
               .optional()
               .action((_, c) => c.copy(disable2ndLevelClosure = true))
               .text("Disable 2nd level closure"),
-            opt[Unit](CommandConstants.ENABLE_JS)
-              .abbr(CommandConstants.ENABLE_JS)
+            opt[Unit](CommandConstants.DISABLE_READ_DATAFLOW)
+              .abbr(CommandConstants.DISABLE_READ_DATAFLOW_ABBR)
               .optional()
-              .action((_, c) => c.copy(enableJS = true))
-              .text("enable javascript scan engine"),
+              .action((_, c) => c.copy(disableReadDataflow = true))
+              .text("Disable database read dataflow"),
+            opt[Unit](CommandConstants.ENABLE_API_DISPLAY)
+              .abbr(CommandConstants.ENABLE_API_DISPLAY_ABBR)
+              .optional()
+              .action((_, c) => c.copy(enableAPIDisplay = true))
+              .text("Enable api display"),
             opt[Unit](CommandConstants.IGNORE_EXCLUDE_RULES)
               .abbr(CommandConstants.IGNORE_EXCLUDE_RULES_ABBR)
               .optional()
@@ -185,6 +206,26 @@ object CommandParser {
               .optional()
               .action((_, c) => c.copy(testOutput = true))
               .text("Export the intermediate flow output"),
+            opt[Unit](CommandConstants.GENERATE_AUDIT_REPORT)
+              .abbr(CommandConstants.GENERATE_AUDIT_REPORT_ABBR)
+              .optional()
+              .action((_, c) => c.copy(generateAuditReport = true))
+              .text("Export the audit report"),
+            opt[Unit](CommandConstants.ENABLE_AUDIT_SEMANTIC_FILTER)
+              .abbr(CommandConstants.ENABLE_AUDIT_SEMANTIC_FILTER_ABBR)
+              .optional()
+              .action((_, c) => c.copy(enableAuditSemanticsFilter = true))
+              .text("Enable semantic filter in dataflow audit report"),
+            opt[Int](CommandConstants.LIMIT_NO_SINKS_FOR_DATAFLOWS)
+              .abbr(CommandConstants.LIMIT_NO_SINKS_FOR_DATAFLOWS_ABBR)
+              .optional()
+              .action((x, c) => c.copy(limitNoSinksForDataflows = x))
+              .text("Limit the no sinks being used for finding dataflows"),
+            opt[Int](CommandConstants.LIMIT_ARG_EXPANSION_FOR_DATAFLOWS)
+              .abbr(CommandConstants.LIMIT_ARG_EXPANSION_FOR_DATAFLOWS_ABBR)
+              .optional()
+              .action((x, c) => c.copy(limitArgExpansionDataflows = x))
+              .text("Max Limit for argument expansion being done while finding dataflows"),
             arg[String]("<Source directory>")
               .required()
               .action((x, c) => c.copy(sourceLocation = c.sourceLocation + x))
@@ -238,7 +279,7 @@ object CommandParser {
             println(OParser.usage(parser))
             exit(1)
         }
-        commandProcessor.config = config
+        commandProcessor.withConfig(config)
         Some(commandProcessor)
       case _ =>
         println(OParser.usage(parser))

@@ -23,39 +23,64 @@
 
 package ai.privado.exporter
 
+import ai.privado.cache
 import ai.privado.cache.{AppCache, RuleCache, TaggerCache}
-import ai.privado.model.{CatLevelOne, Constants}
+import ai.privado.metric.MetricHandler
+import ai.privado.model.{CatLevelOne, Constants, Language}
 import ai.privado.model.exporter.{DataFlowSubCategoryPathExcerptModel, RuleInfo, ViolationPolicyDetailsModel}
 import ai.privado.semantic.Language.finder
+import io.shiftleft.codepropertygraph.generated.Languages
 import ai.privado.utility.Utilities
 import ai.privado.utility.Utilities.dump
-import io.shiftleft.codepropertygraph.generated.nodes._
+import io.shiftleft.codepropertygraph.generated.nodes.*
 import overflowdb.traversal.Traversal
-import io.shiftleft.semanticcpg.language._
+import io.shiftleft.semanticcpg.language.*
 import better.files.File
 
 import scala.collection.mutable
+import scala.collection.concurrent.TrieMap
 
 object ExporterUtility {
 
   /** Convert List of path element schema object
     */
-  def convertPathElements(nodes: List[AstNode], sourceId: String = ""): List[DataFlowSubCategoryPathExcerptModel] = {
+  def convertPathElements(
+    nodes: List[AstNode],
+    sourceId: String = "",
+    taggerCache: TaggerCache = new TaggerCache()
+  ): List[DataFlowSubCategoryPathExcerptModel] = {
+    val lang     = AppCache.repoLanguage
+    val isPython = lang == Language.PYTHON
+
     val sizeOfList = nodes.size
     nodes.zipWithIndex.flatMap { case (node, index) =>
       val currentNodeModel = convertIndividualPathElement(node, index, sizeOfList)
       if (
         index == 0 && node.tag.nameExact(Constants.catLevelOne).valueExact(CatLevelOne.DERIVED_SOURCES.name).nonEmpty
       ) {
-        val typeFullName = Traversal(node).isIdentifier.typeFullName.headOption.getOrElse("")
+        var typeFullName = Iterator(node).isIdentifier.typeFullName.headOption.getOrElse("")
+
+        // Temporary fix for python to match the typeFullName
+        typeFullName = updateTypeFullNameForPython(typeFullName, isPython)
+
         // Going 1 level deep for derived sources to add extra nodes
-        TaggerCache.typeDeclMemberCache.getOrElse(typeFullName, mutable.HashMap[String, Member]()).get(sourceId) match {
-          case Some(member) =>
-            val typeFullNameLevel2 = member.typeFullName
-            TaggerCache.typeDeclMemberCache
-              .getOrElse(typeFullNameLevel2, mutable.HashMap[String, Member]())
+        taggerCache.typeDeclMemberCache
+          .getOrElse(typeFullName, TrieMap[String, mutable.Set[Member]]())
+          .get(sourceId) match {
+          case Some(members: mutable.HashSet[Member]) =>
+            // Picking up only the head as any path to base is sufficient
+            val member: Member     = members.head
+            var typeFullNameLevel2 = member.typeFullName // java.lang.string
+
+            // Temporary fix for python to match the typeFullName
+            typeFullNameLevel2 = updateTypeFullNameForPython(typeFullNameLevel2, isPython)
+
+            taggerCache.typeDeclMemberCache
+              .getOrElse(typeFullNameLevel2, TrieMap[String, mutable.Set[Member]]())
               .get(sourceId) match {
-              case Some(member2) =>
+              case Some(member2Set: mutable.HashSet[Member]) =>
+                // Picking up only the head as any path to base is sufficient
+                val member2 = member2Set.head
                 // Going 2 level deep for derived sources to add extra nodes
                 convertIndividualPathElement(
                   member2,
@@ -72,16 +97,18 @@ object ExporterUtility {
             }
 
           case _ => // Checking if 2nd level is of Extends type
-            TaggerCache.typeDeclExtendingTypeDeclCache
-              .getOrElse(typeFullName, mutable.HashMap[String, TypeDecl]())
+            taggerCache
+              .getTypeDeclExtendingTypeDeclCacheItem(typeFullName)
               .get(sourceId) match {
-              case Some(typeDecl) => // Fetching information for the 2nd level member node
-                TaggerCache.typeDeclMemberCache
-                  .getOrElse(typeDecl.fullName, mutable.HashMap[String, Member]())
+              case Some(typeDecl: TypeDecl) => // Fetching information for the 2nd level member node
+                taggerCache.typeDeclMemberCache
+                  .getOrElse(typeDecl.fullName, TrieMap[String, mutable.Set[Member]]())
                   .get(sourceId) match {
-                  case Some(member) =>
+                  case Some(members: mutable.HashSet[Member]) =>
+                    // Picking up only the head as any path to base is sufficient
+                    val member = members.head
                     val currentTypeDeclNode = // Fetching the current TypeDecl node
-                      TaggerCache.typeDeclDerivedByExtendsCache.get(typeFullName)
+                      taggerCache.typeDeclDerivedByExtendsCache.get(typeFullName)
                     convertIndividualPathElement(
                       member,
                       messageInExcerpt = generateDSMemberMsg(member.name, typeDecl.fullName)
@@ -96,8 +123,7 @@ object ExporterUtility {
                 currentNodeModel
             }
         }
-      } else
-        currentNodeModel
+      } else currentNodeModel
     }
   }
 
@@ -142,17 +168,16 @@ object ExporterUtility {
       }
     }
 
-    if (fileName.equals(Constants.EMPTY) || sample.equals(Constants.EMPTY))
-      None
+    if (fileName.equals(Constants.EMPTY) || sample.equals(Constants.EMPTY)) None
     else {
       val message = {
-        if (Traversal(node).isCall.nonEmpty) {
-          val methodFullName  = Traversal(node).isCall.methodFullName.headOption.getOrElse("")
+        if (Iterator(node).isCall.nonEmpty) {
+          val methodFullName  = Iterator(node).isCall.methodFullName.headOption.getOrElse("")
           val methodInterface = methodFullName.split(":").headOption.getOrElse("")
           if (methodInterface.contains("unresolved") || methodInterface.contains("<operator>")) ""
           else methodInterface
-        } else if (Traversal(node).isIdentifier.nonEmpty)
-          Traversal(node).isIdentifier.typeFullName.headOption.getOrElse("")
+        } else if (Iterator(node).isIdentifier.nonEmpty)
+          Iterator(node).isIdentifier.typeFullName.headOption.getOrElse("")
         else
           messageInExcerpt
       }
@@ -168,16 +193,16 @@ object ExporterUtility {
     }
   }
 
-  def getRuleInfoForExporting(ruleId: String): RuleInfo = {
-    RuleCache.getRuleInfo(ruleId) match {
+  def getRuleInfoForExporting(ruleCache: RuleCache, ruleId: String): RuleInfo = {
+    ruleCache.getRuleInfo(ruleId) match {
       case Some(rule) =>
         RuleInfo(rule.id, rule.name, rule.category, rule.domains, rule.sensitivity, rule.isSensitive, rule.tags)
       case None => RuleInfo("", "", "", Array[String](), "", isSensitive = false, Map[String, String]())
     }
   }
 
-  def getPolicyInfoForExporting(policyOrThreatId: String): Option[ViolationPolicyDetailsModel] = {
-    RuleCache.getPolicyOrThreat(policyOrThreatId) match {
+  def getPolicyInfoForExporting(ruleCache: RuleCache, policyOrThreatId: String): Option[ViolationPolicyDetailsModel] = {
+    ruleCache.getPolicyOrThreat(policyOrThreatId) match {
       case Some(policyOrThreat) =>
         Some(
           ViolationPolicyDetailsModel(
@@ -209,6 +234,23 @@ object ExporterUtility {
     */
   private def generateDSExtendsMsg(typeDeclName: String, typeDeclFullName: String): String = {
     s"'$typeDeclName' class is inherited by '$typeDeclFullName' class"
+  }
+
+  private def updateTypeFullNameForPython(typeFullName: String, isPython: Boolean): String = {
+    var updatedTypeFullName = typeFullName
+    val pattern1            = "(.+)\\.<init>".r
+    val pattern2            = "(.+)\\.\\w+<body>.*".r
+    val pattern3            = "(.+)<meta>.*".r
+
+    if (isPython) {
+      typeFullName match {
+        case pattern1(str) => updatedTypeFullName = str
+        case pattern2(str) => updatedTypeFullName = str
+        case pattern3(str) => updatedTypeFullName = str
+        case _             => updatedTypeFullName = typeFullName
+      }
+    }
+    updatedTypeFullName
   }
 
 }

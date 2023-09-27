@@ -23,15 +23,19 @@
 
 package ai.privado.languageEngine.javascript.tagger
 
-import ai.privado.languageEngine.javascript.tagger.sink.RegularSinkTagger
-import ai.privado.languageEngine.javascript.tagger.source.IdentifierTagger
-import ai.privado.model.{ConfigAndRules, NodeType}
+import ai.privado.cache.{RuleCache, TaggerCache}
+import ai.privado.entrypoint.{PrivadoInput, TimeMetric}
+import ai.privado.languageEngine.javascript.config.JSDBConfigTagger
+import ai.privado.languageEngine.javascript.passes.read.GraphqlQueryParserPass
+import ai.privado.languageEngine.javascript.tagger.collection.CollectionTagger
+import ai.privado.languageEngine.javascript.tagger.sink.{GraphqlAPITagger, JSAPITagger, RegularSinkTagger}
+import ai.privado.languageEngine.javascript.tagger.source.{IdentifierTagger, LiteralTagger}
 import ai.privado.tagger.PrivadoBaseTagger
-import ai.privado.tagger.sink.APITagger
-import ai.privado.tagger.source.LiteralTagger
+import ai.privado.tagger.collection.WebFormsCollectionTagger
+import ai.privado.tagger.source.SqlQueryTagger
 import io.shiftleft.codepropertygraph.generated.Cpg
 import io.shiftleft.codepropertygraph.generated.nodes.Tag
-import io.shiftleft.semanticcpg.language._
+import io.shiftleft.semanticcpg.language.*
 import org.slf4j.LoggerFactory
 import overflowdb.traversal.Traversal
 
@@ -40,18 +44,33 @@ import java.util.Calendar
 class PrivadoTagger(cpg: Cpg) extends PrivadoBaseTagger {
   private val logger = LoggerFactory.getLogger(this.getClass)
 
-  override def runTagger(rules: ConfigAndRules): Traversal[Tag] = {
+  override def runTagger(
+    ruleCache: RuleCache,
+    taggerCache: TaggerCache,
+    privadoInputConfig: PrivadoInput
+  ): Traversal[Tag] = {
 
     logger.info("Starting tagging")
 
-    println(s"${Calendar.getInstance().getTime} - LiteralTagger invoked...")
-    new LiteralTagger(cpg).createAndApply()
-    println(s"${Calendar.getInstance().getTime} - IdentifierTagger invoked...")
-    new IdentifierTagger(cpg).createAndApply()
-    println(s"${Calendar.getInstance().getTime} - RegularSinkTagger invoked...")
-    new RegularSinkTagger(cpg).createAndApply()
-    println(s"${Calendar.getInstance().getTime} - APITagger invoked...")
-    new APITagger(cpg).createAndApply()
+    new LiteralTagger(cpg, ruleCache).createAndApply()
+
+    new IdentifierTagger(cpg, ruleCache, taggerCache).createAndApply()
+
+    new SqlQueryTagger(cpg, ruleCache).createAndApply()
+
+    new RegularSinkTagger(cpg, ruleCache).createAndApply()
+
+    new JSAPITagger(cpg, ruleCache, privadoInput = privadoInputConfig).createAndApply()
+
+    new GraphqlAPITagger(cpg, ruleCache).createAndApply()
+
+    new GraphqlQueryParserPass(cpg, ruleCache, taggerCache).createAndApply()
+
+    new JSDBConfigTagger(cpg).createAndApply()
+
+    new WebFormsCollectionTagger(cpg, ruleCache).createAndApply()
+
+    new CollectionTagger(cpg, ruleCache).createAndApply()
 
     logger.info("Done with tagging")
 

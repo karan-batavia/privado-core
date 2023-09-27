@@ -23,33 +23,39 @@
 
 package ai.privado.languageEngine.java.processor
 
-import ai.privado.cache.{AppCache, DataFlowCache}
+import ai.privado.audit.{AuditReportEntryPoint, DependencyReport}
+import ai.privado.cache._
 import ai.privado.entrypoint.ScanProcessor.config
 import ai.privado.entrypoint.{ScanProcessor, TimeMetric}
-import ai.privado.exporter.JSONExporter
-import ai.privado.languageEngine.java.passes.config.PropertiesFilePass
+import ai.privado.exporter.{ExcelExporter, JSONExporter}
+import ai.privado.languageEngine.java.cache.ModuleCache
+import ai.privado.languageEngine.java.passes.config.{JavaPropertyLinkerPass, ModuleFilePass}
 import ai.privado.languageEngine.java.passes.methodFullName.LoggerLombokPass
+import ai.privado.languageEngine.java.passes.module.{DependenciesCategoryPass, DependenciesNodePass}
 import ai.privado.languageEngine.java.semantic.Language._
 import ai.privado.metric.MetricHandler
-import ai.privado.model.Constants.{outputDirectoryName, outputFileName, storages}
-import ai.privado.utility.{UnresolvedReportUtility}
-import ai.privado.model.Constants.{outputDirectoryName, outputFileName, outputIntermediateFileName}
-import ai.privado.model.{CatLevelOne, ConfigAndRules, Constants}
+import ai.privado.model.Constants._
+import ai.privado.model.{CatLevelOne, Constants, Language}
+import ai.privado.passes.{HTMLParserPass, SQLParser, DBTParserPass}
 import ai.privado.semantic.Language._
-import ai.privado.model.Language
+import ai.privado.utility.Utilities.createCpgFolder
+import ai.privado.utility.{PropertyParserPass, UnresolvedReportUtility}
+import better.files.File
 import io.joern.dataflowengineoss.layers.dataflows.{OssDataFlow, OssDataFlowOptions}
 import io.joern.javasrc2cpg.{Config, JavaSrc2Cpg}
 import io.joern.x2cpg.X2Cpg.applyDefaultOverlays
+import io.joern.x2cpg.utils.ExternalCommand
+import io.joern.x2cpg.utils.dependency.DependencyResolver
 import io.shiftleft.codepropertygraph
 import io.shiftleft.codepropertygraph.generated.Languages
 import io.shiftleft.semanticcpg.language._
 import io.shiftleft.semanticcpg.layers.LayerCreatorContext
 import org.slf4j.LoggerFactory
 
+import java.nio.file.Paths
 import java.util.Calendar
+import scala.collection.mutable.ListBuffer
 import scala.util.{Failure, Success, Try}
-import io.joern.x2cpg.utils.ExternalCommand
-import better.files.File
 
 object JavaProcessor {
 
@@ -57,17 +63,22 @@ object JavaProcessor {
   private var cpgconfig = Config()
   private def processCPG(
     xtocpg: Try[codepropertygraph.Cpg],
-    processedRules: ConfigAndRules,
+    ruleCache: RuleCache,
     sourceRepoLocation: String
   ): Either[String, Unit] = {
     xtocpg match {
       case Success(cpg) => {
         try {
-          println(s"${Calendar.getInstance().getTime} - Processing property files pass")
-          new PropertiesFilePass(cpg, sourceRepoLocation).createAndApply()
-          println(
-            s"${TimeMetric.getNewTime()} - Property file pass done in \t\t\t- ${TimeMetric.setNewTimeToLastAndGetTimeDiff()}"
-          )
+
+          new PropertyParserPass(cpg, sourceRepoLocation, ruleCache, Language.JAVA).createAndApply()
+          new JavaPropertyLinkerPass(cpg).createAndApply()
+
+          println(s"${Calendar.getInstance().getTime} - HTML parser pass")
+          new HTMLParserPass(cpg, sourceRepoLocation, ruleCache).createAndApply()
+
+          new SQLParser(cpg, sourceRepoLocation, ruleCache).createAndApply()
+          new DBTParserPass(cpg, sourceRepoLocation, ruleCache).createAndApply()
+
           logger.info("Applying data flow overlay")
           val context = new LayerCreatorContext(cpg)
           val options = new OssDataFlowOptions()
@@ -77,14 +88,21 @@ object JavaProcessor {
             s"${TimeMetric.getNewTime()} - Run oss data flow is done in \t\t\t- ${TimeMetric.setNewTimeToLastAndGetTimeDiff()}"
           )
 
+          // Unresolved function report
+          if (config.showUnresolvedFunctionsReport) {
+            val path = s"${config.sourceLocation.head}/${Constants.outputDirectoryName}"
+            UnresolvedReportUtility.reportUnresolvedMethods(xtocpg, path, Language.JAVA)
+          }
+
           // Run tagger
           println(s"${Calendar.getInstance().getTime} - Tagging source code with rules...")
-          cpg.runTagger(processedRules)
+          val taggerCache = new TaggerCache
+          cpg.runTagger(ruleCache, taggerCache, ScanProcessor.config)
           println(
             s"${TimeMetric.getNewTime()} - Tagging source code is done in \t\t\t- ${TimeMetric.setNewTimeToLastAndGetTimeDiff()}"
           )
           println(s"${Calendar.getInstance().getTime} - Finding source to sink flow of data...")
-          val dataflowMap = cpg.dataflow
+          val dataflowMap = cpg.dataflow(ScanProcessor.config, ruleCache)
           println(s"${TimeMetric.getNewTime()} - Finding source to sink flow is done in \t\t- ${TimeMetric
               .setNewTimeToLastAndGetTimeDiff()} - Processed final flows - ${DataFlowCache.finalDataflow.size}")
           println(
@@ -92,28 +110,12 @@ object JavaProcessor {
           )
           println(s"${Calendar.getInstance().getTime} - Brewing result...")
           MetricHandler.setScanStatus(true)
+          val errorMsg = new ListBuffer[String]()
           // Exporting Results
-          if (ScanProcessor.config.testOutput) {
-            JSONExporter.IntermediateFileExport(
-              outputIntermediateFileName,
-              sourceRepoLocation,
-              DataFlowCache.getIntermediateDataFlow()
-            ) match {
-              case Left(err) =>
-                MetricHandler.otherErrorsOrWarnings.addOne(err)
-                Left(err)
-              case Right(_) =>
-                println(
-                  s"${Calendar.getInstance().getTime} - Successfully exported intermediate output to '${AppCache.localScanPath}/${Constants.outputDirectoryName}' folder..."
-                )
-                Right(())
-            }
-          }
-
-          JSONExporter.fileExport(cpg, outputFileName, sourceRepoLocation, dataflowMap) match {
+          JSONExporter.fileExport(cpg, outputFileName, sourceRepoLocation, dataflowMap, ruleCache, taggerCache) match {
             case Left(err) =>
               MetricHandler.otherErrorsOrWarnings.addOne(err)
-              Left(err)
+              errorMsg += err
             case Right(_) =>
               println(
                 s"${Calendar.getInstance().getTime} - Successfully exported output to '${AppCache.localScanPath}/$outputDirectoryName' folder..."
@@ -121,8 +123,68 @@ object JavaProcessor {
               logger.debug(
                 s"Total Sinks identified : ${cpg.tag.where(_.nameExact(Constants.catLevelOne).valueExact(CatLevelOne.SINKS.name)).call.tag.nameExact(Constants.id).value.toSet}"
               )
-              Right(())
           }
+
+          // Exporting the Audit report
+          if (ScanProcessor.config.generateAuditReport) {
+            val moduleCache: ModuleCache = new ModuleCache()
+            new ModuleFilePass(cpg, sourceRepoLocation, moduleCache, ruleCache).createAndApply()
+            new DependenciesNodePass(cpg, moduleCache).createAndApply()
+            // Fetch all dependency after pass
+            val dependencies = DependencyReport.getDependencyList(xtocpg)
+            new DependenciesCategoryPass(xtocpg.get, ruleCache, dependencies.toList).createAndApply()
+            ExcelExporter.auditExport(
+              outputAuditFileName,
+              AuditReportEntryPoint.getAuditWorkbook(xtocpg, taggerCache, dependencies, sourceRepoLocation),
+              sourceRepoLocation
+            ) match {
+              case Left(err) =>
+                MetricHandler.otherErrorsOrWarnings.addOne(err)
+                errorMsg += err
+              case Right(_) =>
+                println(
+                  s"${Calendar.getInstance().getTime} - Successfully exported Audit report to '${AppCache.localScanPath}/$outputDirectoryName' folder..."
+                )
+            }
+
+            // Exporting the Unresolved report
+            JSONExporter.UnresolvedFlowFileExport(
+              outputUnresolvedFilename,
+              sourceRepoLocation,
+              DataFlowCache.getJsonFormatDataFlow(AuditCache.unfilteredFlow)
+            ) match {
+              case Left(err) =>
+                MetricHandler.otherErrorsOrWarnings.addOne(err)
+                errorMsg += err
+              case Right(_) =>
+                println(
+                  s"${Calendar.getInstance().getTime} - Successfully exported Unresolved flow output to '${AppCache.localScanPath}/${Constants.outputDirectoryName}' folder..."
+                )
+            }
+          }
+
+          // Exporting the Intermediate report
+          if (ScanProcessor.config.testOutput || ScanProcessor.config.generateAuditReport) {
+            JSONExporter.IntermediateFileExport(
+              outputIntermediateFileName,
+              sourceRepoLocation,
+              DataFlowCache.getJsonFormatDataFlow(DataFlowCache.getIntermediateDataFlow())
+            ) match {
+              case Left(err) =>
+                MetricHandler.otherErrorsOrWarnings.addOne(err)
+                errorMsg += err
+              case Right(_) =>
+                println(
+                  s"${Calendar.getInstance().getTime} - Successfully exported intermediate output to '${AppCache.localScanPath}/${Constants.outputDirectoryName}' folder..."
+                )
+            }
+          }
+
+          // Check if any of the export failed
+          if (errorMsg.toList.isEmpty)
+            Right(())
+          else
+            Left(errorMsg.toList.mkString("\n"))
         } finally {
           cpg.close()
           import java.io.File
@@ -146,27 +208,32 @@ object JavaProcessor {
     * @param lang
     * @return
     */
-  def createJavaCpg(processedRules: ConfigAndRules, sourceRepoLocation: String, lang: String): Either[String, Unit] = {
+  def createJavaCpg(ruleCache: RuleCache, sourceRepoLocation: String, lang: String): Either[String, Unit] = {
     println(s"${Calendar.getInstance().getTime} - Processing source code using ${Languages.JAVASRC} engine")
     if (!config.skipDownloadDependencies)
       println(s"${Calendar.getInstance().getTime} - Downloading dependencies and Parsing source code...")
     else
       println(s"${Calendar.getInstance().getTime} - Parsing source code...")
-    cpgconfig = Config(inputPath = sourceRepoLocation, fetchDependencies = !config.skipDownloadDependencies)
+
+    // Create the .privado folder if not present
+    createCpgFolder(sourceRepoLocation);
+
+    val cpgOutputPath = s"$sourceRepoLocation/$outputDirectoryName/$cpgOutputFileName"
+    cpgconfig = Config(fetchDependencies = !config.skipDownloadDependencies)
+      .withInputPath(sourceRepoLocation)
+      .withOutputPath(cpgOutputPath)
 
     // Create delomboked directory if source code uses lombok
-    val dependencies        = JavaSrc2Cpg.getDependencyList(cpgconfig)
+    val dependencies        = getDependencyList(cpgconfig)
     val hasLombokDependency = dependencies.exists(_.contains("lombok"))
     if (hasLombokDependency) {
       val delombokPath = Delombok.run(AppCache.scanPath)
       AppCache.isLombokPresent = true
 
       // Creating a new CpgConfig which uses the delombokPath
-      cpgconfig = Config(
-        inputPath = delombokPath,
-        fetchDependencies = !config.skipDownloadDependencies,
-        delombokMode = Some("no-delombok")
-      )
+      cpgconfig = Config(fetchDependencies = !config.skipDownloadDependencies, delombokMode = Some("no-delombok"))
+        .withInputPath(delombokPath)
+        .withOutputPath(cpgOutputPath)
     }
 
     val javasrc = JavaSrc2Cpg()
@@ -174,21 +241,14 @@ object JavaProcessor {
       println(
         s"${TimeMetric.getNewTime()} - Base processing done in \t\t\t\t- ${TimeMetric.setNewTimeToLastAndGetTimeDiff()}"
       )
-      println(s"${Calendar.getInstance().getTime} - Processing Logger Lombok pass")
+
       new LoggerLombokPass(cpg).createAndApply()
-      println(
-        s"${TimeMetric.getNewTime()} - Logger Lombok pass done in \t\t\t- ${TimeMetric.setNewTimeToLastAndGetTimeDiff()}"
-      )
+
       applyDefaultOverlays(cpg)
       cpg
     }
 
-    if (config.showUnresolvedFunctionsReport) {
-      val path = s"${config.sourceLocation.head}/${Constants.outputDirectoryName}"
-      UnresolvedReportUtility.reportUnresolvedMethods(xtocpg, path, Language.JAVA)
-    }
-
-    val msg = processCPG(xtocpg, processedRules, sourceRepoLocation)
+    val msg = processCPG(xtocpg, ruleCache, sourceRepoLocation)
 
     // Delete the delomboked directory after scanning is completed
     if (AppCache.isLombokPresent) {
@@ -199,6 +259,16 @@ object JavaProcessor {
       }
     }
     msg
+  }
+
+  def getDependencyList(config: Config): Set[String] = {
+    val codeDir = config.inputPath
+    DependencyResolver.getDependencies(Paths.get(codeDir)) match {
+      case Some(dependencies) => dependencies.toSet
+      case None =>
+        logger.warn(s"Could not fetch dependencies for project at path $codeDir")
+        Set()
+    }
   }
 }
 
@@ -255,5 +325,4 @@ object Delombok {
         projectDir
     }
   }
-
 }

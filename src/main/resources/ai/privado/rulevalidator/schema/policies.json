@@ -54,8 +54,7 @@
             "default": "",
             "examples": [
               "Policy to restrict Contact Information being shared with Slack"
-            ],
-            "pattern": "^.*$"
+            ]
           },
           "action": {
             "$id": "#root/policies/items/action",
@@ -93,6 +92,12 @@
                   "pattern": "^.*$"
                 }
               },
+              "sourceFilters": {
+                "$id": "#root/policies/items/dataFlow/sourceFilters",
+                "title": "SourceFilters",
+                "type": "object",
+                "default": null
+              },
               "sinks": {
                 "$id": "#root/policies/items/dataFlow/sinks",
                 "title": "Sinks",
@@ -111,6 +116,16 @@
                 }
               }
             }
+          },
+          "config": {
+            "$id": "#root/policies/items/config",
+            "title": "Config",
+            "type": ["object", "null"],
+            "default": null,
+            "patternProperties": {
+              "^.*$": { "type": "string" }
+            },
+            "additionalProperties": false
           },
           "repositories": {
             "$id": "#root/policies/items/repositories",
@@ -152,8 +167,7 @@
             "default": "",
             "examples": [
               "Policy to restrict Contact Information being shared with Slack"
-            ],
-            "pattern": "^.*$"
+            ]
           }
         }
       }

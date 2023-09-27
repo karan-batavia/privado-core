@@ -23,9 +23,9 @@
 
 package ai.privado.exporter
 
-import ai.privado.cache.{DataFlowCache, DatabaseDetailsCache, RuleCache}
+import ai.privado.cache.{DataFlowCache, DatabaseDetailsCache, RuleCache, TaggerCache}
 import ai.privado.model.exporter.{DataFlowSubCategoryModel, DataFlowSubCategoryPathModel, DataFlowSubCategorySinkModel}
-import ai.privado.model.{Constants, DataFlowPathModel, NodeType, DatabaseDetails}
+import ai.privado.model.{Constants, DataFlowPathModel, DatabaseDetails, NodeType}
 import io.joern.dataflowengineoss.language.Path
 import io.shiftleft.codepropertygraph.generated.Cpg
 import io.shiftleft.semanticcpg.language._
@@ -34,7 +34,7 @@ import org.slf4j.{Logger, LoggerFactory}
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
-class DataflowExporter(cpg: Cpg, dataflowsMap: Map[String, Path]) {
+class DataflowExporter(cpg: Cpg, dataflowsMap: Map[String, Path], taggerCache: TaggerCache) {
 
   val falsePositiveSources: List[String] = List[String](
     "Data.Sensitive.OnlineIdentifiers.Cookies",
@@ -45,46 +45,43 @@ class DataflowExporter(cpg: Cpg, dataflowsMap: Map[String, Path]) {
 
   val logger: Logger = LoggerFactory.getLogger(getClass)
 
-  def getFlowByType(sinkSubCategory: String, sinkNodeTypes: Set[String]): Set[DataFlowSubCategoryModel] = {
-    sinkNodeTypes.flatMap(sinkNodeType => {
-      val dataflowModelFilteredByType = DataFlowCache.getDataflow.filter(dataflowModel =>
-        dataflowModel.sinkSubCategory.equals(sinkSubCategory) && dataflowModel.sinkNodeType.equals(sinkNodeType)
-      )
-      val dataflowModelBySourceId = dataflowModelFilteredByType.groupBy(_.sourceId)
-      dataflowModelBySourceId.map(dataflowBySourceEntrySet => {
+  def getFlowByType(
+    sinkSubCategory: String,
+    sinkNodeTypes: Set[String],
+    ruleCache: RuleCache
+  ): Set[DataFlowSubCategoryModel] = {
+    val dataflowModelFilteredByType = DataFlowCache.getDataflow.filter(dataflowModel =>
+      dataflowModel.sinkSubCategory.equals(sinkSubCategory) && sinkNodeTypes.contains(dataflowModel.sinkNodeType)
+    )
+    val dataflowModelBySourceId = dataflowModelFilteredByType.groupBy(_.sourceId)
+    dataflowModelBySourceId
+      .map(dataflowBySourceEntrySet => {
         DataFlowSubCategoryModel(
           dataflowBySourceEntrySet._1,
-          convertSourceModelList(dataflowBySourceEntrySet._1, dataflowBySourceEntrySet._2, sinkSubCategory)
+          convertSourceModelList(dataflowBySourceEntrySet._1, dataflowBySourceEntrySet._2, sinkSubCategory, ruleCache)
         )
       })
-    })
+      .toSet
   }
 
   def convertSourceModelList(
     sourceId: String,
     sourceModelList: List[DataFlowPathModel],
-    sinkSubCategory: String
+    sinkSubCategory: String,
+    ruleCache: RuleCache
   ): List[DataFlowSubCategorySinkModel] = {
-    def convertSink(sourceId: String, sinkId: String, sinkPathIds: List[String]) = {
-      val sinkIdAfterSplit = sinkId.split("#_#")
+    def convertSink(sourceId: String, sinkId: String, sinkPathIds: List[String], urls: Set[String]) = {
 
       // Special case for API type of nodes
-      val apiUrl = RuleCache.getRuleInfo(sinkIdAfterSplit(0)) match {
-        case Some(rule) if rule.nodeType.equals(NodeType.API) & sinkIdAfterSplit.size >= 2 =>
-          sinkIdAfterSplit(1).split(",").toList
-        case _ => List[String]()
-      }
+      val apiUrl = if (urls.nonEmpty) urls.toList else List[String]()
 
-      val databaseDetails = RuleCache.getRuleInfo(sinkIdAfterSplit(0)) match {
-        case Some(rule)
-            if rule.id.matches(
-              "Storages.SpringFramework.Jdbc.*|Sinks.Database.JPA.*|Storages.MongoDB.SpringFramework.*|Storages.SpringFramework.Jooq.*"
-            ) =>
+      val databaseDetails = ruleCache.getRuleInfo(sinkId) match {
+        case Some(rule) =>
           DatabaseDetailsCache.getDatabaseDetails(rule.id)
         case _ => Option.empty[DatabaseDetails]
       }
 
-      val ruleInfo = ExporterUtility.getRuleInfoForExporting(sinkIdAfterSplit(0))
+      val ruleInfo = ExporterUtility.getRuleInfoForExporting(ruleCache, sinkId)
       DataFlowSubCategorySinkModel(
         sinkSubCategory,
         ruleInfo.id,
@@ -95,31 +92,34 @@ class DataflowExporter(cpg: Cpg, dataflowsMap: Map[String, Path]) {
         ruleInfo.isSensitive,
         ruleInfo.tags,
         apiUrl,
-        databaseDetails.getOrElse(DatabaseDetails("", "", "", "")),
+        databaseDetails.getOrElse(DatabaseDetails("", "", "", "", "")),
         sinkPathIds
           .map(sinkPathId => convertPathsList(dataflowsMap(sinkPathId), sinkPathId, sourceId))
       )
     }
 
     // sinkMap will have (sinkId -> List[String]() where value are all the paths/grouping-of-path which belong to the sinkId
-    val sinkMap = mutable.HashMap[String, ListBuffer[String]]()
+    val sinkMap     = mutable.HashMap[String, ListBuffer[String]]()
+    val sinkApiUrls = mutable.HashMap[String, mutable.Set[String]]()
     sourceModelList.foreach(sourceModel => {
       var sinkId = sourceModel.sinkId
       val sinkAPITag = dataflowsMap(sourceModel.pathId).elements.last.tag
-        .filter(node => node.name.equals(Constants.apiUrl))
-      if (sinkAPITag.nonEmpty) {
-        sinkId += "#_#" + sinkAPITag.value.l.mkString(",")
-      }
+        .filter(node => node.name.equals(Constants.apiUrl + sourceModel.sinkId))
+      if (!sinkApiUrls.contains(sinkId))
+        sinkApiUrls(sinkId) = mutable.Set()
+      sinkApiUrls(sinkId).addAll(sinkAPITag.value.l)
       if (!sinkMap.contains(sinkId))
         sinkMap(sinkId) = ListBuffer()
       sinkMap(sinkId).append(sourceModel.pathId)
     })
-    sinkMap.map(entrySet => convertSink(sourceId, entrySet._1, entrySet._2.toList)).toList
+    sinkMap
+      .map(entrySet => convertSink(sourceId, entrySet._1, entrySet._2.toSet.toList, sinkApiUrls(entrySet._1).toSet))
+      .toList
 
   }
 
   private def convertPathsList(sinkFlow: Path, pathId: String, sourceId: String) = {
-    DataFlowSubCategoryPathModel(pathId, ExporterUtility.convertPathElements(sinkFlow.elements, sourceId))
+    DataFlowSubCategoryPathModel(pathId, ExporterUtility.convertPathElements(sinkFlow.elements, sourceId, taggerCache))
   }
 
 }
