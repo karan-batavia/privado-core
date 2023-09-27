@@ -17,7 +17,7 @@ jobs:
 
       # check if matrix is not empty
       - name: List language
-        run: echo ${{matrix.language}}.txt
+        run: echo ./repos/${{matrix.language}}.txt
 
       - name: Install JDK-18
         uses: actions/setup-java@v3
