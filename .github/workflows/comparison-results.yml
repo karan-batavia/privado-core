@@ -25,7 +25,7 @@ jobs:
         run: |
           cd ./temp/standalone-monitoring-stability
           rps=$(<repos.txt)
-          echo rps
+          echo $rps
           echo $(cat ./repos.txt)
           echo "repos<<\n" >> $GITHUB_OUTPUT
           echo "$(cat ./repos.txt)" >> $GITHUB_OUTPUT
