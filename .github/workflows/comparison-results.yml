@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       repos: ${{ steps.get-repos.outputs.repos }}
+      REPO_ARRAY: ${{ steps.repo-array.outputs.REPOS }}
     steps:
       - name: Clone standalone-monitoring-stability/flow-test
         uses: actions/checkout@v3
@@ -29,12 +30,14 @@ jobs:
           echo "," >> $GITHUB_OUTPUT
 
       - name: Convert to array
-        run: echo ${{ toJSON(steps.get-repos.outputs.repos) }}
+        id: repo-array
+        run: echo "REPOS=${{ toJSON(steps.get-repos.outputs.repos) }}" >> $GITHUB_OUTPUT
+
   setup_and_scan:
     needs: get_repos_for_matrix
     strategy:
       matrix:
-        language: ['java', 'python', 'js', 'ruby']
+        language: ${{needs.get_repos_for_matrix.outputs.REPOS}}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
