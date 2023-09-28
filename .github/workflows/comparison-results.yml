@@ -23,7 +23,7 @@ jobs:
         id: get-repos
         run: |
           cd ./temp/standalone-monitoring-stability
-          REPOS='${{ cat ./repos.txt }}'
+          REPOS= echo $(cat ./repos.txt)
           echo ::set-output name=repos::${REPOS}
 
       - name: Echo repos
