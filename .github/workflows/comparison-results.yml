@@ -23,6 +23,7 @@ jobs:
         id: get-repos
         run: |
           cd ./temp/standalone-monitoring-stability
+          echo $(cat ./repos.txt)
           REPOS=echo $(cat ./repos.txt)
           echo "repos=${REPOS}" >> $GITHUB_OUTPUT
 
