@@ -24,7 +24,7 @@ jobs:
         run: |
           cd ./temp/standalone-monitoring-stability
           REPOS= echo $(cat ./repos.txt)
-          echo ::set-output name=repos::${REPOS}
+          echo "repos=${REPOS}" >> $GITHUB_OUTPUT
 
       - name: Echo repos
         run: echo ${{ steps.get-repos.outputs.repos }}
