@@ -30,7 +30,7 @@ jobs:
           echo "\n" >> $GITHUB_OUTPUT
 
       - name: Test
-        run: cat $GITHUB_OUTPUT
+        run: $(cat $GITHUB_OUTPUT)
 
   setup_and_scan:
     needs: get_repos_for_matrix
