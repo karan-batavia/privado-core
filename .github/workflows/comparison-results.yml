@@ -31,13 +31,13 @@ jobs:
 
       - name: Convert to array
         id: repo-array
-        run: echo "REPOS=${{ toArray(steps.get-repos.outputs.repos) }}" >> $GITHUB_OUTPUT
+        run: echo "REPOS=${{ toJSON(steps.get-repos.outputs.repos) }}" >> $GITHUB_OUTPUT
 
   setup_and_scan:
     needs: get_repos_for_matrix
     strategy:
       matrix:
-        language: ${{needs.get_repos_for_matrix.outputs.REPOS}}
+        language: ${{ fromJSON(needs.get_repos_for_matrix.outputs.REPOS) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
