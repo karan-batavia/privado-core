@@ -29,7 +29,7 @@ jobs:
           echo "\n" >> $GITHUB_OUTPUT
 
       - name: Convert to array
-        run: echo ${{ fromJSON(steps.get-repos.outputs.repos) }}
+        run: echo ${{ toJSON(steps.get-repos.outputs.repos) }}
   setup_and_scan:
     needs: get_repos_for_matrix
     strategy:
