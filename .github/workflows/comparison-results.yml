@@ -24,7 +24,7 @@ jobs:
         run: |
           cd ./temp/standalone-monitoring-stability
           echo $(cat ./repos.txt)
-          REPOS=echo $(cat ./repos.txt)
+          REPOS='echo $(cat ./repos.txt)'
           echo "repos=${REPOS}" >> $GITHUB_OUTPUT
 
   setup_and_scan:
