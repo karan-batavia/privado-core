@@ -25,7 +25,7 @@ jobs:
           cd ./temp/standalone-monitoring-stability
           echo $(cat ./repos.txt)
           echo "repos<<\n" >> $GITHUB_OUTPUT
-          echo "repos=$(cat ./repos.txt)" >> $GITHUB_OUTPUT
+          echo "$(cat ./repos.txt)" >> $GITHUB_OUTPUT
           echo "\n" >> $GITHUB_OUTPUT
   setup_and_scan:
     needs: get_repos_for_matrix
