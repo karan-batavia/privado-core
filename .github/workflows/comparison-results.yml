@@ -33,7 +33,7 @@ jobs:
         id: repo-array
         run: | 
           echo "REPOS<<," >> $GITHUB_OUTPUT
-          echo '${{ toJSON(steps.get-repos.outputs.repos) }}" >> $GITHUB_OUTPUT
+          echo "${{ toJSON(steps.get-repos.outputs.repos) }}" >> $GITHUB_OUTPUT
           echo "," >> $GITHUB_OUTPUT          
 
 
