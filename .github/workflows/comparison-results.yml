@@ -7,6 +7,28 @@ on:
       - "**"
 
 jobs:
+  get_repos_for_matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      repos: ${{ steps.get-repos.outputs.repos }}
+    steps:
+      - name: Clone standalone-monitoring-stability/flow-test
+        uses: actions/checkout@v3
+        with:
+          repository: Privado-Inc/standalone-monitoring-stability
+          path: ./temp/standalone-monitoring-stability
+          ref: main
+
+      - name: Get all repos
+        id: get-repos
+        run: |
+          cd ./temp/standalone-monitoring-stability
+          REPOS='${{ cat ./repos.txt }}'
+          echo ::set-output name=repos::${REPOS}
+
+      - name: Echo repos
+        run: echo ${{ steps.get-repos.outputs.repos }}
+
   setup_and_scan:
     strategy:
       matrix:
