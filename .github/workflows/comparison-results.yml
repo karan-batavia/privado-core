@@ -31,7 +31,7 @@ jobs:
 
       - name: Convert to array
         id: repo-array
-        run: echo "REPOS=${{ toJSON(steps.get-repos.outputs.repos) }}" >> $GITHUB_OUTPUT
+        run: echo "REPOS=${{ steps.get-repos.outputs.repos }}" >> $GITHUB_OUTPUT
 
       - name: Test output
         run: echo ${{ steps.get_repos_for_matrix.outputs.REPOS }}
