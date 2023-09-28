@@ -29,23 +29,18 @@ jobs:
           echo "$(cat ./repos.txt)" >> $GITHUB_OUTPUT
           echo "\n" >> $GITHUB_OUTPUT
 
-      - name: Test
-        run: $(cat $GITHUB_OUTPUT)
-
   setup_and_scan:
     needs: get_repos_for_matrix
     strategy:
       matrix:
-        language: ${{ fromJSON(join(needs.get_repos_for_matrix.outputs.REPOS, ',')) }}
+        language: ['java']
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
       # check if matrix is not empty
       - name: List language
-        run: echo ${{ join(needs.get_repos_for_matrix.outputs.repos, '\n') }} >> ./repos.txt
-
-
+        run: echo ${{ needs.get_repos_for_matrix.outputs.repos }}
 
       - name: Install JDK-18
         uses: actions/setup-java@v3
