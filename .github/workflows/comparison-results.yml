@@ -24,7 +24,7 @@ jobs:
         run: |
           cd ./temp/standalone-monitoring-stability
           echo $(cat ./repos.txt)
-          echo "repos=${{join((cat ./repos.txt), '\n')}}" >> $GITHUB_ENV
+          echo "repos=$(cat ./repos.txt)" >> $GITHUB_ENV
   setup_and_scan:
     needs: get_repos_for_matrix
     strategy:
