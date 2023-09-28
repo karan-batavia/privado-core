@@ -28,14 +28,7 @@ jobs:
           echo "repos<<\n" >> $GITHUB_OUTPUT
           echo "$(cat ./repos.txt)" >> $GITHUB_OUTPUT
           echo "\n" >> $GITHUB_OUTPUT
-
-      - name: Convert to array
-        id: repo-array
-        run: | 
-          echo "REPOS<<," >> $GITHUB_OUTPUT
-          echo "${{ toJSON(steps.get-repos.outputs.repos) }}" >> $GITHUB_OUTPUT
-          echo "," >> $GITHUB_OUTPUT          
-
+          echo $GITHUB_OUTPUT
 
   setup_and_scan:
     needs: get_repos_for_matrix
