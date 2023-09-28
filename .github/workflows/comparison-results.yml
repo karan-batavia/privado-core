@@ -24,9 +24,9 @@ jobs:
         run: |
           cd ./temp/standalone-monitoring-stability
           echo $(cat ./repos.txt)
-          echo "repos<<\n" >> $GITHUB_ENV
-          echo "repos=$(cat ./repos.txt)" >> $GITHUB_ENV
-          echo "\n" >> $GITHUB_ENV
+          echo "repos<<\n" >> $GITHUB_OUTPUT
+          echo "repos=$(cat ./repos.txt)" >> $GITHUB_OUTPUT
+          echo "\n" >> $GITHUB_OUTPUT
   setup_and_scan:
     needs: get_repos_for_matrix
     strategy:
@@ -38,7 +38,7 @@ jobs:
 
       # check if matrix is not empty
       - name: List language
-        run: echo ${{ env.repos }}
+        run: echo ${{ needs.get_repos_for_matrix.outputs.repos }}
 
       - name: Install JDK-18
         uses: actions/setup-java@v3
