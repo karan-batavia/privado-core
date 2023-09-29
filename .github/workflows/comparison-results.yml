@@ -41,7 +41,7 @@ jobs:
 
       # check if matrix is not empty
       - name: List language
-        run: echo ${{ fromJSON(needs.get_repos_for_matrix.outputs.repos).repos }}
+        run: echo ${{ needs.get_repos_for_matrix.outputs.repos }}
 
       - name: Install JDK-18
         uses: actions/setup-java@v3
