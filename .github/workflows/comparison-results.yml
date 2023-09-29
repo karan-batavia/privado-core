@@ -35,7 +35,7 @@ jobs:
     needs: get_repos_for_matrix
     strategy:
       matrix:
-        language: ['java']
+        language: ['java', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k']
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
