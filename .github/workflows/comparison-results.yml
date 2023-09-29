@@ -28,7 +28,7 @@ jobs:
           echo "repos<<\n" >> $GITHUB_ENV
           echo "$(cat ./repos.txt)" >> $GITHUB_ENV
           echo "\n" >> $GITHUB_ENV
-          echo "repos={\"repos\":$(echo $(cat ./repos.txt))}" >> $GITHUB_OUTPUT
+          echo "repos={\"repos\":$(echo $repos)}" >> $GITHUB_OUTPUT
 
   setup_and_scan:
     needs: get_repos_for_matrix
