@@ -34,7 +34,7 @@ jobs:
     needs: get_repos_for_matrix
     strategy:
       matrix:
-        language: ${{ fromJSON(needs.get_repos_for_matrix.outputs.repos.repos) }}
+        language: ${{ fromJSON(needs.get_repos_for_matrix.outputs.repos) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
