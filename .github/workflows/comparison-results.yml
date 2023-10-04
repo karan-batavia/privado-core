@@ -143,7 +143,7 @@ jobs:
         run: cd ./temp/standalone-monitoring-stability && pip install -r requirements.txt && python3 ./collate_summary.py -s /home/runner/work/privado-core/privado-core/language_summary
 
       - name: Debug summary output
-        run: cat ./global_summary.txt
+        run: cat ./temp/standalone-monitoring-stability/global_summary.txt
 
       - name: Set summary variable
         run: |
