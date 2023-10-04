@@ -18,6 +18,9 @@ jobs:
           slack-channel: ${{ secrets.SLACK_CHANNEL_ID }}
           slack-text: "Comparison workflow started on ${{github.event.repository.name}} by PR ${{github.event.number}} from branch ${{github.head_ref}} to ${{github.base_ref}} \nPR link https://github.com/Privado-Inc/privado-core/pull/${{github.event.number}}"
 
+      - name: Save output to env
+        run: echo "INIT_MSG=${{ steps.send-message.outputs.slack-result }}" >> $GITHUB_ENV
+
   setup_and_scan:
     needs: start_workflow
     strategy:
@@ -28,7 +31,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Debug output
-        run: echo "${{needs.start_workflow.steps.initial_message.outputs.slack-result}}"
+        run: echo ${{env.INIT_MSG}}
 
       - name: Install JDK-18
         uses: actions/setup-java@v3
