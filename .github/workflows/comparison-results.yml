@@ -48,31 +48,14 @@ jobs:
       - name: Move results to a folder
         run: cd ./temp/standalone-monitoring-stability/ && mkdir results && mv output-${{github.event.number}}.xlsx ./results/output-${{github.event.number}}.xlsx && mv ./temp/result-${{github.event.number}}.zip ./results/result-${{github.event.number}}.zip && mv slack_summary.txt ./results/slack_summary.txt
 
-      - name: Upload output and result for next job
-        uses: actions/upload-artifact@master
-        with:
-          name: results
-          path: /home/runner/work/privado-core/privado-core/temp/standalone-monitoring-stability/results
-
-  send-result-to-slack:
-    needs: setup_and_scan
-    runs-on: ubuntu-latest
-    steps: 
-      - uses: actions/checkout@v3
-
-      - name: Download result folder
-        uses: actions/download-artifact@master
-        with:
-          name: results
-          path: ./results
-      
+      # Send result to slack
       - name: Zip the results
-        run: zip result-${{github.event.number}}.zip -r ./results
+        run: zip result-${{matrix.language}}-${{github.event.number}}.zip -r /home/runner/work/privado-core/privado-core/temp/standalone-monitoring-stability/results
 
       - name: Set summary variable
         run: |
           echo "MESSAGE<<EOF" >> $GITHUB_ENV
-          echo "$(cat ./results/slack_summary.txt)" >> $GITHUB_ENV
+          echo "$(cat /home/runner/work/privado-core/privado-core/temp/standalone-monitoring-stability/results/slack_summary.txt)" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
       - name: Post results to slack
@@ -80,32 +63,9 @@ jobs:
         with:
           slack_token: ${{ secrets.SLACK_TOKEN }}
           channel_id: ${{ secrets.SLACK_CHANNEL_ID }}
-          file_path: "/home/runner/work/privado-core/privado-core/result-${{github.event.number}}.zip"
-          initial_comment: "Comparison Results generated on ${{github.event.repository.name}} by PR ${{github.event.number}} from branch ${{github.head_ref}} to ${{github.base_ref}} \nPR link https://github.com/Privado-Inc/privado-core/pull/${{github.event.number}} \nSummary Report:\n ${{ env.MESSAGE }}"
+          file_path: "/home/runner/work/privado-core/privado-core/result-${{matrix.language}}-${{github.event.number}}.zip"
+          initial_comment: "Comparison Results generated on ${{github.event.repository.name}} by PR ${{github.event.number}} from branch ${{github.head_ref}} to ${{github.base_ref}} \nPR link https://github.com/Privado-Inc/privado-core/pull/${{github.event.number}}\n Language: ${{matrix.language}} \nSummary Report:\n ${{ env.MESSAGE }}"
           file_type: "zip"
-
-  send-result-to-workflow:
-    needs: send-result-to-slack
-    runs-on: ubuntu-latest
-    steps:
-
-      - name: Install Python 3.10
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Download result folder
-        uses: actions/download-artifact@master
-        with:
-          name: results
-          path: ./results
-
-      - name: Clone standalone-monitoring-stability/main
-        uses: actions/checkout@v3
-        with:
-          repository: Privado-Inc/standalone-monitoring-stability
-          path: ./temp/standalone-monitoring-stability
-          ref: main
 
       - name: Export workflow output
         run: cd ./temp/standalone-monitoring-stability && python3 ./workflow_check.py /home/runner/work/privado-core/privado-core/results/slack_summary.txt
