@@ -104,6 +104,24 @@ jobs:
       - name: Print action result
         run: cat ./temp/standalone-monitoring-stability/action_result.txt
 
+      - name: Upload summary file
+        uses: actions/upload-artifact@master
+        with:
+          name: language_summary
+          path: /home/runner/work/privado-core/privado-core/temp/standalone-monitoring-stability/results/slack_summary.txt
+
       - name: Workflow report analysis
         if: ${{ env.MESSAGE != 'true' }}
         run: exit 1
+
+  collate_summary:
+    needs: [start_workflow, setup_and_scan]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download summary file
+        uses: actions/download-artifact@master
+        with:
+          name: language_summary
+          path: ./language_summary.txt
+      - name: Debug output
+        run: cat ./language_summary.txt
