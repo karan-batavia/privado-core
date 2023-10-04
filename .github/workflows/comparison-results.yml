@@ -122,6 +122,6 @@ jobs:
         uses: actions/download-artifact@master
         with:
           name: language_summary
-          path: ./language_summary.txt
+          path: ./language_summary
       - name: Debug output
-        run: cat ./language_summary.txt
+        run: cat ./language_summary/slack_summary.txt
