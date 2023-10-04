@@ -22,8 +22,10 @@ jobs:
       - name: Debug output
         run: echo "Data - ${{ steps.initial-message.outputs.slack-result }}"
       - name: Save output to env
+        id: save-output
         run: echo "INIT_MSG_TS=${{ fromJson(steps.initial-message.outputs.slack-result).response.message.ts }}" >> $GITHUB_OUTPUT
-
+    outputs:
+      init_message_ts: ${{steps.save-output.outputs.INIT_MSG_TS}}
   setup_and_scan:
     needs: start_workflow
     strategy:
@@ -34,7 +36,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Debug output
-        run: echo ${{needs.start_workflow.outputs.INIT_MSG_TS}}
+        run: echo ${{needs.start_workflow.outputs.init_message_ts}}
 
       - name: Install JDK-18
         uses: actions/setup-java@v3
