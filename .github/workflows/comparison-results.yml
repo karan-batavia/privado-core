@@ -7,40 +7,14 @@ on:
       - "**"
 
 jobs:
-  get_repos_for_matrix:
-    runs-on: ubuntu-latest
-    outputs:
-      repos: ${{ toJSON(steps.get-repos.outputs.repos) }}
-      REPO_ARRAY: ${{ steps.repo-array.outputs.REPOS }}
-    steps:
-      - name: Clone standalone-monitoring-stability/flow-test
-        uses: actions/checkout@v3
-        with:
-          repository: Privado-Inc/standalone-monitoring-stability
-          path: ./temp/standalone-monitoring-stability
-          ref: main
-
-      - name: Get all repos
-        id: get-repos
-        run: |
-          cd ./temp/standalone-monitoring-stability
-          echo $(cat ./repos.txt)
-          echo "repos<<\n" >> $GITHUB_OUTPUT
-          echo "$(cat ./repos.txt)" >> $GITHUB_OUTPUT
-          echo "\n" >> $GITHUB_OUTPUT
-
   setup_and_scan:
     needs: get_repos_for_matrix
     strategy:
       matrix:
-        language: ['abc']
+        language: ['java', 'python', 'js', 'ruby-1', 'ruby-2']
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-
-      # check if matrix is not empty
-      - name: List language
-        run: echo $(',' read -r -a array << ${{ needs.get_repos_for_matrix.outputs.repos }})
 
       - name: Install JDK-18
         uses: actions/setup-java@v3
