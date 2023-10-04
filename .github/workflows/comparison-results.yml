@@ -16,12 +16,12 @@ jobs:
         with:
           slack-bot-user-oauth-access-token: ${{ secrets.SLACK_TOKEN }}
           slack-channel: ${{ secrets.SLACK_CHANNEL_ID }}
-          slack-text: "Comparison workflow started on ${{github.event.repository.name}} by PR ${{github.event.number}} from branch ${{github.head_ref}} to ${{github.base_ref}}"
+          slack-text: "Comparison workflow started for https://github.com/Privado-Inc/privado-core/pull/${{github.event.number}} \n${{github.event.repository.name}} by PR ${{github.event.number}} from branch ${{github.head_ref}} to ${{github.base_ref}}"
 
       - name: Debug output
         run: echo "Data - ${{ steps.initial-message.outputs.slack-result }}"
       - name: Save output to env
-        run: echo "INIT_MSG=${{ steps.initial-message.outputs.slack-result }}" >> $GITHUB_ENV
+        run: echo "INIT_MSG_TS=${{ fromJson(steps.initial-message.outputs.slack-result).response.message.ts }}" >> $GITHUB_ENV
 
   setup_and_scan:
     needs: start_workflow
