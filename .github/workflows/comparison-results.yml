@@ -22,7 +22,7 @@ jobs:
       - name: Debug output
         run: echo "Data - ${{ steps.initial-message.outputs.slack-result }}"
       - name: Save output to env
-        run: echo "INIT_MSG_TS=${{ fromJson(steps.initial-message.outputs.slack-result).response.message.ts }}" >> $GITHUB_ENV
+        run: echo "INIT_MSG_TS=${{ fromJson(steps.initial-message.outputs.slack-result).response.message.ts }}" >> $GITHUB_OUTPUT
 
   setup_and_scan:
     needs: start_workflow
