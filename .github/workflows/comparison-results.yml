@@ -30,7 +30,7 @@ jobs:
     needs: start_workflow
     strategy:
       matrix:
-        language: ['python', 'js']
+        language: ['java', 'python', 'js', 'ruby-1', 'ruby-2']
     continue-on-error: true
     runs-on: ubuntu-latest
     steps:
@@ -154,7 +154,8 @@ jobs:
       - name: Send summary to slack
         uses: archive/github-actions-slack@master
         with:
-          slack-optional-parse: full
+          slack-optional-thread_ts: ${{needs.start_workflow.outputs.init_message_ts}}
+          slack-optional-reply_broadcast: true
           slack-bot-user-oauth-access-token: ${{ secrets.SLACK_TOKEN }}
           slack-channel: ${{ secrets.SLACK_CHANNEL_ID }}
           slack-text: ${{env.MESSAGE}}
