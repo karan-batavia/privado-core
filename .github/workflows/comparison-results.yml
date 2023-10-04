@@ -17,7 +17,7 @@ jobs:
           slack-optional-parse: full
           slack-bot-user-oauth-access-token: ${{ secrets.SLACK_TOKEN }}
           slack-channel: ${{ secrets.SLACK_CHANNEL_ID }}
-          slack-text: "Comparison workflow started for ${{github.event.pull_request.html_url}}"
+          slack-text: "Comparison workflow started for '${{github.event.pull_request.html_url}}'"
 
       - name: Debug output
         run: echo "Data - ${{ steps.initial-message.outputs.slack-result }}"
