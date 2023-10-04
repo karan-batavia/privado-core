@@ -7,7 +7,18 @@ on:
       - "**"
 
 jobs:
+  start_workflow:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send message to slack
+        uses: archive/github-actions-slack@master
+        with:
+          slack-bot-user-oauth-access-token: ${{ secrets.SLACK_TOKEN }}
+          slack-channel: ${{ secrets.SLACK_CHANNEL_ID }}
+          slack-text: "Comparison workflow started on ${{github.event.repository.name}} by PR ${{github.event.number}} from branch ${{github.head_ref}} to ${{github.base_ref}} \nPR link https://github.com/Privado-Inc/privado-core/pull/${{github.event.number}}"
+
   setup_and_scan:
+    needs: start_workflow
     strategy:
       matrix:
         language: ['java', 'python', 'js', 'ruby-1', 'ruby-2']
