@@ -127,5 +127,36 @@ jobs:
       - name: Debug output
         run: ls ./language_summary
 
-      - name: Debug output 1
-        run: cat ./language_summary/slack_summary.txt
+      - name: Install Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Clone standalone-monitoring-stability/flow-test
+        uses: actions/checkout@v3
+        with:
+          repository: Privado-Inc/standalone-monitoring-stability
+          path: ./temp/standalone-monitoring-stability
+          ref: parallel-test
+
+      - name: Collate summary
+        run: cd ./temp/standalone-monitoring-stability && pip install -r requirements.txt && python3 ./collate_summary.py -s /home/runner/work/privado-core/privado-core/language_summary
+
+      - name: Debug summary output
+        run: cat ./global_summary.txt
+
+      - name: Set summary variable
+        run: |
+          echo "MESSAGE<<EOF" >> $GITHUB_ENV
+          echo "$(cat /home/runner/work/privado-core/privado-core/temp/standalone-monitoring-stability/global_summary.txt)" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Send summary to slack
+        uses: archive/github-actions-slack@master
+        with:
+          slack-optional-parse: full
+          slack-bot-user-oauth-access-token: ${{ secrets.SLACK_TOKEN }}
+          slack-channel: ${{ secrets.SLACK_CHANNEL_ID }}
+          slack-text: ${{env.MESSAGE}}
+      
+
