@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Send message to slack
         id: initial_message
-        uses: archive/github-actions-slack@master
+        uses: archive/github-actions-slack@2.0.0
         with:
           slack-bot-user-oauth-access-token: ${{ secrets.SLACK_TOKEN }}
           slack-channel: ${{ secrets.SLACK_CHANNEL_ID }}
