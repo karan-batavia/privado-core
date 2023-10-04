@@ -43,10 +43,10 @@ jobs:
         run: cd ./temp/standalone-monitoring-stability && pip install -r requirements.txt && python3 ./run.py -r ./repos/${{matrix.language}}.txt -b ${{github.base_ref}} -h ${{github.head_ref}} -bcr ${{ github.event.pull_request.base.repo.html_url }} -hcr ${{ github.event.pull_request.head.repo.html_url }} -guf
         
       - name: Run aws-export
-        run: cd ./temp/standalone-monitoring-stability/ && python3 aws-export.py ${{github.event.number}}
+        run: cd ./temp/standalone-monitoring-stability/ && python3 aws-export.py ${{matrix.language}}-${{github.event.number}}
 
       - name: Move results to a folder
-        run: cd ./temp/standalone-monitoring-stability/ && mkdir results && mv output-${{github.event.number}}.xlsx ./results/output-${{github.event.number}}.xlsx && mv ./temp/result-${{github.event.number}}.zip ./results/result-${{github.event.number}}.zip && mv slack_summary.txt ./results/slack_summary.txt
+        run: cd ./temp/standalone-monitoring-stability/ && mkdir results && mv output-${{github.event.number}}.xlsx ./results/output-${{matrix.language}}-${{github.event.number}}.xlsx && mv ./temp/result-${{matrix.language}}-${{github.event.number}}.zip ./results/result-${{matrix.language}}-${{github.event.number}}.zip && mv slack_summary.txt ./results/slack_summary.txt
 
       # Send result to slack
       - name: Zip the results
@@ -68,7 +68,7 @@ jobs:
           file_type: "zip"
 
       - name: Export workflow output
-        run: cd ./temp/standalone-monitoring-stability && python3 ./workflow_check.py /home/runner/work/privado-core/privado-core/results/slack_summary.txt
+        run: cd ./temp/standalone-monitoring-stability && python3 ./workflow_check.py /home/runner/work/privado-core/privado-core/temp/standalone-monitoring-stability/results/slack_summary.txt
 
       - name: Set summary variable
         run: |
