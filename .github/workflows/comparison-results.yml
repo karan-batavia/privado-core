@@ -19,7 +19,7 @@ jobs:
           slack-text: "Comparison workflow started on ${{github.event.repository.name}} by PR ${{github.event.number}} from branch ${{github.head_ref}} to ${{github.base_ref}} \nPR link https://github.com/Privado-Inc/privado-core/pull/${{github.event.number}}"
 
       - name: Debug output
-        run: echo "${{ steps.initial-message.outputs.slack-result }}"
+        run: echo "Data - ${{ steps.initial-message.outputs.slack-result }}"
       - name: Save output to env
         run: echo "INIT_MSG=${{ steps.initial-message.outputs.slack-result }}" >> $GITHUB_ENV
 
