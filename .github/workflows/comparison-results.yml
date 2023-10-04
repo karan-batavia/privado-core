@@ -107,7 +107,7 @@ jobs:
       - name: Upload summary file
         uses: actions/upload-artifact@master
         with:
-          name: language_summary
+          name: ${{matrix.language}}
           path: /home/runner/work/privado-core/privado-core/temp/standalone-monitoring-stability/results/slack_summary.txt
 
       - name: Workflow report analysis
