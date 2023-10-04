@@ -123,5 +123,9 @@ jobs:
         with:
           name: language_summary
           path: ./language_summary
+
       - name: Debug output
+        run: ls ./language_summary
+
+      - name: Debug output 1
         run: cat ./language_summary/slack_summary.txt
