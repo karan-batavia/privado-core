@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Send message to slack
+        id: initial_message
         uses: archive/github-actions-slack@master
         with:
           slack-bot-user-oauth-access-token: ${{ secrets.SLACK_TOKEN }}
@@ -25,6 +26,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
+      - name: Debug output
+        run: echo "${{needs.start_workflow.steps.initial_message.outputs.slack-result}}"
 
       - name: Install JDK-18
         uses: actions/setup-java@v3
