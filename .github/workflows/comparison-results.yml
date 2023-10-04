@@ -30,7 +30,7 @@ jobs:
     needs: start_workflow
     strategy:
       matrix:
-        language: ['java', 'python', 'js']
+        language: ['python', 'js']
     continue-on-error: true
     runs-on: ubuntu-latest
     steps:
