@@ -152,11 +152,11 @@ jobs:
           echo "EOF" >> $GITHUB_ENV
 
       - name: Send summary to slack
-        uses: archive/github-actions-slack@master
+        uses: slackapi/slack-github-action@v1.24.0
         with:
-          slack-update-message-ts: ${{needs.start_workflow.outputs.init_message_ts}}
-          slack-bot-user-oauth-access-token: ${{ secrets.SLACK_TOKEN }}
-          slack-channel: ${{ secrets.SLACK_CHANNEL_ID }}
-          slack-update-message-text: "Comparison Results generated on ${{github.event.repository.name}} by PR ${{github.event.number}} from branch ${{github.head_ref}} to ${{github.base_ref}} \nPR link https://github.com/Privado-Inc/privado-core/pull/${{github.event.number}}\n Language: ${{matrix.language}} \nSummary Report:\n ${{ env.MESSAGE }}"
-      
+          update-ts: ${{needs.start_workflow.outputs.init_message_ts}}
+          channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          slack-message: "Comparison Results generated on ${{github.event.repository.name}} by PR ${{github.event.number}} from branch ${{github.head_ref}} to ${{github.base_ref}} \nPR link https://github.com/Privado-Inc/privado-core/pull/${{github.event.number}}\n Language: ${{matrix.language}} \nSummary Report:\n ${{ env.MESSAGE }}"
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_TOKEN }}
 
