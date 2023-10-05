@@ -17,7 +17,7 @@ jobs:
           slack-optional-parse: full
           slack-bot-user-oauth-access-token: ${{ secrets.SLACK_TOKEN }}
           slack-channel: ${{ secrets.SLACK_CHANNEL_ID }}
-          slack-text: "Comparison workflow started for x`'${{github.event.pull_request.html_url}}'"
+          slack-text: ":rotating_light: Comparison workflow started for x`'${{github.event.pull_request.html_url}}'"
 
       - name: Debug output
         run: echo "Data - ${{ steps.initial-message.outputs.slack-result }}"
@@ -156,7 +156,7 @@ jobs:
         with:
           update-ts: ${{needs.start_workflow.outputs.init_message_ts}}
           channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
-          slack-message: "Comparison Results generated on ${{github.event.repository.name}} by PR ${{github.event.number}} from branch ${{github.head_ref}} to ${{github.base_ref}} \nPR link https://github.com/Privado-Inc/privado-core/pull/${{github.event.number}}\n Language: ${{matrix.language}} \nSummary Report:\n ${{ env.MESSAGE }}"
+          slack-message: "\nComparison Results generated on ${{github.event.repository.name}} by PR ${{github.event.number}} from branch ${{github.head_ref}} to ${{github.base_ref}} \nPR link https://github.com/Privado-Inc/privado-core/pull/${{github.event.number}}\nLanguage: All \nSummary Report:\n ${{ env.MESSAGE }}"
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_TOKEN }}
 
