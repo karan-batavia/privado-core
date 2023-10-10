@@ -2,11 +2,8 @@ name: Monitoring Stability and Comparing Results
 
 # Triggers when a pull_request is created
 on:
-  push:
-    branches:
-      - "**"
   schedule:
-    - cron: '15 8 * * *'
+    - cron: '15 3,8 * * *'
 
 jobs:
   start_workflow:
