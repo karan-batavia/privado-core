@@ -135,7 +135,7 @@ jobs:
         with:
           repository: Privado-Inc/standalone-monitoring-stability
           path: ./temp/standalone-monitoring-stability
-          ref: parallel-test
+          ref: summary/scan-failure
 
       - name: Collate summary
         run: cd ./temp/standalone-monitoring-stability && pip install -r requirements.txt && python3 ./collate_summary.py -s /home/runner/work/privado-core/privado-core/language_summary
